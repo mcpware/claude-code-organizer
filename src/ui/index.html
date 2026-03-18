@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Claude Inventory</title>
+  <link rel="stylesheet" href="/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <div class="tree-area">
+      <!-- Header -->
+      <div class="page-hdr">
+        <div class="logo">C</div>
+        <h1>Claude Inventory</h1>
+        <span class="spacer"></span>
+        <div class="pills" id="pills">
+          <!-- Rendered by app.js -->
+        </div>
+        <input class="search" placeholder="Search..." id="searchInput">
+      </div>
+
+      <!-- Tree content — rendered by app.js -->
+      <div id="tree"></div>
+
+      <!-- Loading state -->
+      <div id="loading" style="text-align:center;padding:60px;color:#9598a8;">
+        Scanning ~/.claude/ ...
+      </div>
+    </div>
+
+    <!-- Detail panel -->
+    <div class="detail hidden" id="detailPanel">
+      <div class="detail-hdr">
+        <h2 id="detailTitle">—</h2>
+        <button class="detail-x" id="detailClose">&times;</button>
+      </div>
+      <div class="detail-bd">
+        <div class="df"><div class="dl">Type</div><div class="dv" id="detailType">—</div></div>
+        <div class="df"><div class="dl">Scope</div><div class="dv" id="detailScope">—</div></div>
+        <div class="df"><div class="dl">Description</div><div class="dv" id="detailDesc">—</div></div>
+        <div class="df"><div class="dl">Size</div><div class="dv" id="detailSize">—</div></div>
+        <div class="df"><div class="dl">Modified</div><div class="dv" id="detailDate">—</div></div>
+        <div class="df"><div class="dl">Path</div><div class="dv" id="detailPath" style="font-size:0.65rem;word-break:break-all;">—</div></div>
+      </div>
+      <div class="detail-ft">
+        <button class="btn btn-p" id="detailOpen">Open in Editor</button>
+        <button class="btn btn-s" id="detailMove">Move to...</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drag confirm modal -->
+  <div class="modal-bg hidden" id="dragConfirmModal">
+    <div class="modal">
+      <h3>Confirm Move</h3>
+      <div class="modal-sub">This will move the file in your Claude config</div>
+      <div class="move-preview" id="dcPreview">
+        <!-- Rendered by app.js showDragConfirm() -->
+      </div>
+      <div class="modal-btns">
+        <button class="btn btn-s" id="dcCancel">Cancel</button>
+        <button class="btn btn-p" id="dcConfirm">Yes, move it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move-to picker modal -->
+  <div class="modal-bg hidden" id="moveModal">
+    <div class="modal">
+      <h3>Move to...</h3>
+      <div class="modal-sub">Select destination scope</div>
+      <div class="modal-body" id="moveDestList"></div>
+      <div class="modal-btns">
+        <button class="btn btn-s" id="moveCancel">Cancel</button>
+        <button class="btn btn-p" id="moveConfirm" disabled>Move here</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast hidden" id="toast"><span id="toastMsg">Done</span></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

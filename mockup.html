@@ -50,6 +50,9 @@
   .pill { background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:5px 14px; color:var(--text-secondary); font-size:0.72rem; cursor:pointer; font-weight:500; transition:all 0.15s; }
   .pill:hover { background:var(--hover); border-color:var(--scope-border); }
   .pill.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .pill b { font-weight:700; margin-left:2px; opacity:0.7; }
+  .pill.active b { opacity:1; }
+  .pills { display:flex; gap:4px; flex-wrap:wrap; }
 
   /* ══════════════════════════════════════════
      SCOPE HEADER — Most prominent
@@ -194,10 +197,14 @@
     <h1>Claude Inventory</h1>
     <span class="spacer"></span>
     <div class="pills">
-      <span class="pill active" onclick="filterAll(this)">All</span>
-      <span class="pill" onclick="ft('memory',this)">🧠 Memory</span>
-      <span class="pill" onclick="ft('skill',this)">⚡ Skills</span>
-      <span class="pill" onclick="ft('mcp',this)">🔌 MCP</span>
+      <span class="pill active" onclick="filterAll(this)">All <b>94</b></span>
+      <span class="pill" onclick="ft('memory',this)">🧠 Memory <b>30</b></span>
+      <span class="pill" onclick="ft('skill',this)">⚡ Skills <b>44</b></span>
+      <span class="pill" onclick="ft('mcp',this)">🔌 MCP <b>3</b></span>
+      <span class="pill" onclick="ft('config',this)">⚙️ Config <b>6</b></span>
+      <span class="pill" onclick="ft('hook',this)">🪝 Hooks <b>1</b></span>
+      <span class="pill" onclick="ft('plugin',this)">🧩 Plugins <b>1</b></span>
+      <span class="pill" onclick="ft('plan',this)">📐 Plans <b>9</b></span>
     </div>
     <input class="search" placeholder="Search..." id="si">
   </div>

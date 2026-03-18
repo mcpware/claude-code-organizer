@@ -81,10 +81,21 @@ Child scopes inherit parent scope's memories, skills, and MCP servers.
 
 ### Tech Stack
 
-- **Server**: Single Node.js file (zero npm dependencies)
-- **Client**: HTML + CSS + [SortableJS](https://github.com/SortableJS/Sortable) via CDN (13KB, handles drag-and-drop)
+- **Server**: Single Node.js file (zero npm dependencies, built-in modules only)
+- **Client**: HTML + CSS + [SortableJS](https://github.com/SortableJS/Sortable) via CDN (13KB)
 - **Distribution**: MCP server + npm package (`npx @mcpware/claude-inventory`)
 - **Also works as**: standalone `localhost` dashboard
+
+### Platform Support
+
+| Platform | Status | Notes |
+|----------|:------:|-------|
+| **Ubuntu / Linux** | ✅ Supported | Primary development and testing platform |
+| **macOS** | ⚠️ Untested | `~/.claude/` path should work, needs verification |
+| **Windows** | ❌ Not yet | Path handling needs adaptation (`C:\Users\...\.claude\`) |
+| **WSL** | ⚠️ Untested | Should work like Linux, needs verification |
+
+Current limitation: developed and tested on Ubuntu only. macOS and Windows support planned for future release.
 
 ---
 

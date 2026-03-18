@@ -1,0 +1,23 @@
+{
+  "name": "@mcpware/claude-inventory",
+  "version": "0.1.0",
+  "description": "Scope-aware inventory manager for Claude Code customizations",
+  "type": "module",
+  "bin": {
+    "claude-inventory": "./bin/cli.mjs"
+  },
+  "scripts": {
+    "start": "node bin/cli.mjs"
+  },
+  "keywords": ["claude-code", "mcp", "inventory", "config-manager", "memory", "skills"],
+  "author": "ithiria894",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ithiria894/claude-inventory"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {}
+}
