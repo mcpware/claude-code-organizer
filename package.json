@@ -1,20 +1,31 @@
 {
-  "name": "@mcpware/claude-inventory",
+  "name": "@mcpware/claude-memory-manager",
   "version": "0.1.0",
-  "description": "Scope-aware inventory manager for Claude Code customizations",
+  "description": "Manage all your Claude Code memories, skills, MCP servers, and hooks — organized by scope, movable via drag-and-drop",
   "type": "module",
   "bin": {
-    "claude-inventory": "./bin/cli.mjs"
+    "claude-memory-manager": "./bin/cli.mjs"
   },
   "scripts": {
     "start": "node bin/cli.mjs"
   },
-  "keywords": ["claude-code", "mcp", "inventory", "config-manager", "memory", "skills"],
+  "keywords": [
+    "claude-code",
+    "claude-memory",
+    "memory-manager",
+    "claude-skills",
+    "mcp-servers",
+    "scope-manager",
+    "config-manager",
+    "claude-code-plugin",
+    "drag-and-drop",
+    "claude-admin"
+  ],
   "author": "ithiria894",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ithiria894/claude-inventory"
+    "url": "https://github.com/mcpware/claude-memory-manager"
   },
   "engines": {
     "node": ">=20"
