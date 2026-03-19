@@ -43,6 +43,21 @@ You have a deploy skill sitting in global, but it only makes sense for one repo.
 - **Zero dependencies** — Pure Node.js built-in modules, SortableJS via CDN
 - **Real file moves** — Actually moves files in `~/.claude/`, not just a viewer
 
+## Why a Visual Dashboard?
+
+Claude Code can already list and move files via CLI. So why does this tool exist?
+
+| What you need | CLI / Skill | Visual Dashboard |
+|---------------|:-----------:|:----------------:|
+| **Big picture** — see every memory, skill, MCP server across all scopes at once | Scroll through long text output | Scope tree, one glance |
+| **Cross-scope awareness** — understand Global vs Workspace vs Project inheritance | Run multiple commands, piece it together | Tree hierarchy with indentation |
+| **Move items between scopes** | Remember exact paths, type commands | Drag-and-drop |
+| **Preview content** | `cat` each file one by one | Click → side panel |
+| **Search across everything** | `grep` with manual filtering | Real-time search + category filters |
+| **Understand what you have** | Count files per directory yourself | Automatic counts per category per scope |
+
+The dashboard gives you the **big picture that text output can't** — you see the full scope tree, spot misplaced items instantly, and fix them with a drag. No commands to memorize, no paths to type.
+
 ## Quick Start
 
 ```bash

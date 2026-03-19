@@ -43,6 +43,21 @@
 - **零相依** — 純 Node.js 內建模組，SortableJS 走 CDN
 - **真・檔案搬移** — 直接動 `~/.claude/` 裡的檔案，不是只能看的 viewer
 
+## 點解要用視覺化儀表板？
+
+Claude Code 用 CLI 都可以 list 同搬 file。咁點解仲要呢個工具？
+
+| 你想做嘅嘢 | CLI / Skill | 視覺化儀表板 |
+|-----------|:-----------:|:----------:|
+| **全局視野** — 一次睇晒所有 scope 嘅記憶、技能、MCP 伺服器 | Scroll 一大段 text output | Scope tree，一眼睇晒 |
+| **跨 scope 認知** — 理解 Global vs Workspace vs Project 嘅繼承關係 | 行幾條 command，自己喺腦入面砌 | 有縮排嘅 tree 層級 |
+| **跨 scope 搬移** | 記住準確路徑，打 command | 拖拉搞掂 |
+| **預覽內容** | 逐個 `cat` 檔案 | 撳一下 → 側邊面板 |
+| **全局搜尋** | `grep` + 自己 filter | 即時搜尋 + 分類篩選 |
+| **了解你有咩** | 自己數每個目錄幾多個 file | 按 scope × 類別自動統計 |
+
+儀表板俾你**text output 做唔到嘅全局視野** — 成個 scope tree 一覽無遺，一眼就見到擺錯位嘅嘢，拖一下就搞掂。唔使背 command，唔使打 path。
+
 ## 快速開始
 
 ```bash
