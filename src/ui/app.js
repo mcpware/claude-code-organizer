@@ -641,6 +641,28 @@ function setupExpandToggle() {
 function setupSearch() {
   document.getElementById("searchInput").addEventListener("input", function () {
     const q = this.value.toLowerCase();
+    const btn = document.getElementById("expandToggle");
+
+    // Auto-expand when searching, collapse back when cleared
+    if (q && !allExpanded) {
+      allExpanded = true;
+      btn.innerHTML = '<span class="toggle-icon expanded"></span> Collapse all';
+      document.querySelectorAll(".scope-hdr").forEach(hdr => {
+        hdr.nextElementSibling?.classList.remove("c");
+        hdr.querySelector(".scope-tog")?.classList.remove("c");
+      });
+      document.querySelectorAll(".cat-hdr").forEach(hdr => {
+        hdr.nextElementSibling?.classList.remove("c");
+        hdr.querySelector(".cat-tog")?.classList.remove("c");
+      });
+    } else if (!q && allExpanded) {
+      allExpanded = false;
+      btn.innerHTML = '<span class="toggle-icon"></span> Expand all';
+      document.querySelectorAll(".cat-hdr").forEach(hdr => {
+        hdr.nextElementSibling?.classList.add("c");
+        hdr.querySelector(".cat-tog")?.classList.add("c");
+      });
+    }
 
     // 1. Show/hide individual item rows
     document.querySelectorAll(".item-row").forEach(row => {
