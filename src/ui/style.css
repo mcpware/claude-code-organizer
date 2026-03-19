@@ -89,6 +89,14 @@ body {
 .scope-body { padding:0 0 6px; }
 .scope-body.c { display:none; }
 
+/* Drop zone highlighting — entire scope card lights up */
+.scope-block.drop-target > .scope-hdr {
+  background:var(--accent-light);
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(91,95,199,0.15);
+  transition:all 0.12s;
+}
+
 .inherit {
   font-size:0.68rem; color:var(--accent-text); padding:6px 14px 10px 40px;
   font-weight:500; display:flex; align-items:center; gap:6px; flex-wrap:wrap;
@@ -153,6 +161,7 @@ body {
 .item-row:hover .row-acts { opacity:1; }
 .rbtn { background:var(--surface); border:1px solid var(--border); border-radius:5px; color:var(--text-secondary); padding:3px 8px; cursor:pointer; font-size:0.6rem; font-family:inherit; transition:all 0.12s; }
 .rbtn:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+.rbtn-danger:hover { background:#dc2626; color:#fff; border-color:#dc2626; }
 
 /* ── Detail panel ── */
 .detail { width:340px; border-left:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; background:var(--surface); }
@@ -172,6 +181,8 @@ body {
 .btn-p:disabled { opacity:0.4; cursor:not-allowed; }
 .btn-s { background:var(--surface); color:var(--text-secondary); }
 .btn-s:hover { background:var(--hover); }
+.btn-danger { background:#dc2626; color:#fff; border-color:#dc2626; }
+.btn-danger:hover { background:#b91c1c; }
 
 /* ── Modals ── */
 .modal-bg { position:fixed; inset:0; background:rgba(30,32,40,0.25); display:flex; align-items:center; justify-content:center; z-index:100; backdrop-filter:blur(3px); }

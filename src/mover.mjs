@@ -10,7 +10,7 @@
  * Pure data module. No HTTP, no UI.
  */
 
-import { rename, mkdir, readFile, writeFile } from "node:fs/promises";
+import { rename, mkdir, readFile, writeFile, rm, unlink } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
@@ -190,6 +190,66 @@ export async function moveItem(item, toScopeId, scopes) {
     }
   } catch (err) {
     return { ok: false, error: `Move failed: ${err.message}` };
+  }
+}
+
+// ── Delete functions ─────────────────────────────────────────────────
+
+async function deleteMemory(item) {
+  await unlink(item.path);
+  return { ok: true, deleted: item.path, message: `Deleted memory "${item.name}"` };
+}
+
+async function deleteSkill(item) {
+  await rm(item.path, { recursive: true, force: true });
+  return { ok: true, deleted: item.path, message: `Deleted skill "${item.name}"` };
+}
+
+async function deleteMcp(item) {
+  const mcpJson = item.path;
+  let content;
+  try {
+    content = JSON.parse(await readFile(mcpJson, "utf-8"));
+  } catch {
+    return { ok: false, error: `Cannot read .mcp.json: ${mcpJson}` };
+  }
+
+  if (!content.mcpServers?.[item.name]) {
+    return { ok: false, error: `Server "${item.name}" not found in ${mcpJson}` };
+  }
+
+  delete content.mcpServers[item.name];
+  await writeFile(mcpJson, JSON.stringify(content, null, 2) + "\n");
+
+  return { ok: true, deleted: mcpJson, message: `Deleted MCP server "${item.name}"` };
+}
+
+/**
+ * Delete an item permanently.
+ */
+export async function deleteItem(item, scopes) {
+  if (item.locked) {
+    return { ok: false, error: `${item.name} is locked and cannot be deleted` };
+  }
+
+  const deletableCategories = ["memory", "skill", "mcp"];
+  if (!deletableCategories.includes(item.category)) {
+    return { ok: false, error: `${item.category} items cannot be deleted` };
+  }
+
+  try {
+    switch (item.category) {
+      case "memory":
+        return await deleteMemory(item);
+      case "skill":
+        return await deleteSkill(item);
+      case "mcp":
+        return await deleteMcp(item);
+      default:
+        return { ok: false, error: `Unknown category: ${item.category}` };
+    }
+  } catch (err) {
+    return { ok: false, error: `Delete failed: ${err.message}` };
   }
 }
 

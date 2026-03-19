@@ -48,6 +48,7 @@
       <div class="detail-ft">
         <button class="btn btn-p" id="detailOpen">Open in Editor</button>
         <button class="btn btn-s" id="detailMove">Move to...</button>
+        <button class="btn btn-danger" id="detailDelete">Delete</button>
       </div>
     </div>
   </div>
@@ -76,6 +77,21 @@
       <div class="modal-btns">
         <button class="btn btn-s" id="moveCancel">Cancel</button>
         <button class="btn btn-p" id="moveConfirm" disabled>Move here</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete confirm modal -->
+  <div class="modal-bg hidden" id="deleteModal">
+    <div class="modal">
+      <h3>Delete Item</h3>
+      <div class="modal-sub">This will permanently delete the file from disk</div>
+      <div class="move-preview" id="deletePreview">
+        <!-- Rendered by app.js -->
+      </div>
+      <div class="modal-btns">
+        <button class="btn btn-s" id="deleteCancel">Cancel</button>
+        <button class="btn btn-danger" id="deleteConfirm">Delete</button>
       </div>
     </div>
   </div>

@@ -14,6 +14,9 @@ let data = null;         // { scopes, items, counts }
 let activeFilters = new Set(); // empty = show all, or set of "memory", "skill", "mcp", etc.
 let selectedItem = null; // currently selected item object
 let pendingDrag = null;  // { item, fromScopeId, toScopeId, revertFn }
+let pendingDelete = null; // item to delete
+let draggingItem = null; // item currently being dragged
+let expandState = { scopes: new Set(), cats: new Set() }; // track expanded sections
 
 // ── Category config ──────────────────────────────────────────────────
 
@@ -210,6 +213,7 @@ function renderItem(item) {
     <span class="row-acts">
       <button class="rbtn" data-action="move">Move</button>
       <button class="rbtn" data-action="open">Open</button>
+      <button class="rbtn rbtn-danger" data-action="delete">Delete</button>
     </span>`;
 
   return `
@@ -241,10 +245,58 @@ function esc(s) {
 
 // ── SortableJS init ──────────────────────────────────────────────────
 
+function saveExpandState() {
+  expandState.scopes.clear();
+  expandState.cats.clear();
+  document.querySelectorAll(".scope-hdr").forEach(hdr => {
+    const body = hdr.nextElementSibling;
+    if (body && !body.classList.contains("c")) {
+      expandState.scopes.add(hdr.dataset.scopeId);
+    }
+  });
+  document.querySelectorAll(".cat-hdr").forEach(hdr => {
+    const body = hdr.nextElementSibling;
+    const scopeId = hdr.closest(".scope-block")?.querySelector(".scope-hdr")?.dataset.scopeId || "";
+    const catKey = `${scopeId}::${hdr.dataset.cat}`;
+    if (body && !body.classList.contains("c")) {
+      expandState.cats.add(catKey);
+    }
+  });
+}
+
+function restoreExpandState() {
+  // Scopes default open — collapse those NOT in saved state (only if we have saved state)
+  const hasSavedState = expandState.scopes.size > 0 || expandState.cats.size > 0;
+  document.querySelectorAll(".scope-hdr").forEach(hdr => {
+    const body = hdr.nextElementSibling;
+    const tog = hdr.querySelector(".scope-tog");
+    if (hasSavedState && !expandState.scopes.has(hdr.dataset.scopeId)) {
+      body?.classList.add("c");
+      tog?.classList.add("c");
+    }
+  });
+
+  // Categories default collapsed — expand those in saved state
+  document.querySelectorAll(".cat-hdr").forEach(hdr => {
+    const body = hdr.nextElementSibling;
+    const tog = hdr.querySelector(".cat-tog");
+    const scopeId = hdr.closest(".scope-block")?.querySelector(".scope-hdr")?.dataset.scopeId || "";
+    const catKey = `${scopeId}::${hdr.dataset.cat}`;
+
+    if (expandState.cats.has(catKey)) {
+      body?.classList.remove("c");
+      tog?.classList.remove("c");
+    } else {
+      body?.classList.add("c");
+      tog?.classList.add("c");
+    }
+  });
+}
+
 function initSortable() {
   document.querySelectorAll(".sortable-zone").forEach(el => {
     const group = el.dataset.group;
-    if (!group || group === "none") return; // non-movable categories
+    if (!group || group === "none") return;
 
     Sortable.create(el, {
       group,
@@ -257,7 +309,15 @@ function initSortable() {
       scrollSensitivity: 100,
       scrollSpeed: 15,
       bubbleScroll: true,
+      onStart(evt) {
+        const itemPath = evt.item.dataset.path;
+        draggingItem = data.items.find(i => i.path === itemPath);
+      },
       onEnd(evt) {
+        draggingItem = null;
+        // Remove all drop-target highlights
+        document.querySelectorAll(".scope-block.drop-target").forEach(b => b.classList.remove("drop-target"));
+
         if (evt.from === evt.to) return;
 
         const itemEl = evt.item;
@@ -270,7 +330,6 @@ function initSortable() {
         const fromScope = data.scopes.find(s => s.id === fromScopeId);
         const toScope = data.scopes.find(s => s.id === toScopeId);
 
-        // Revert function
         const oldParent = evt.from;
         const oldIndex = evt.oldIndex;
         const revertFn = () => {
@@ -278,14 +337,55 @@ function initSortable() {
           else oldParent.insertBefore(itemEl, oldParent.children[oldIndex]);
         };
 
-        // Show confirm with full details
         pendingDrag = { item, fromScopeId, toScopeId, revertFn };
         showDragConfirm(item, fromScope, toScope);
       }
     });
   });
 
-  // Scope header toggle — default OPEN (show structure)
+  // ── Scope card as drop zone (for cross-scope drag) ──
+  document.querySelectorAll(".scope-block").forEach(block => {
+    const hdr = block.querySelector(".scope-hdr");
+    if (!hdr) return;
+    const scopeId = hdr.dataset.scopeId;
+
+    block.addEventListener("dragover", (e) => {
+      if (!draggingItem) return;
+      if (draggingItem.scopeId === scopeId) return;
+      e.preventDefault();
+      // Highlight only this scope card (remove from others first)
+      document.querySelectorAll(".scope-block.drop-target").forEach(b => {
+        if (b !== block) b.classList.remove("drop-target");
+      });
+      block.classList.add("drop-target");
+    });
+
+    block.addEventListener("dragleave", (e) => {
+      if (!block.contains(e.relatedTarget)) {
+        block.classList.remove("drop-target");
+      }
+    });
+
+    block.addEventListener("drop", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      block.classList.remove("drop-target");
+      document.querySelectorAll(".scope-block.drop-target").forEach(b => b.classList.remove("drop-target"));
+
+      if (!draggingItem) return;
+      if (draggingItem.scopeId === scopeId) return;
+
+      const item = draggingItem;
+      const fromScope = data.scopes.find(s => s.id === item.scopeId);
+      const toScope = data.scopes.find(s => s.id === scopeId);
+
+      pendingDrag = { item, fromScopeId: item.scopeId, toScopeId: scopeId, revertFn: () => {} };
+      showDragConfirm(item, fromScope, toScope);
+      draggingItem = null;
+    });
+  });
+
+  // Scope header toggle — default OPEN
   document.querySelectorAll(".scope-hdr").forEach(hdr => {
     hdr.addEventListener("click", () => {
       const body = hdr.nextElementSibling;
@@ -295,14 +395,13 @@ function initSortable() {
     });
   });
 
-  // Category toggle — default COLLAPSED (hide items)
-  document.querySelectorAll(".cat-hdr").forEach(hdr => {
-    const body = hdr.nextElementSibling;
-    const tog = hdr.querySelector(".cat-tog");
-    body.classList.add("c");
-    tog.classList.add("c");
+  // Category toggle — restore state or default collapsed
+  restoreExpandState();
 
+  document.querySelectorAll(".cat-hdr").forEach(hdr => {
     hdr.addEventListener("click", () => {
+      const body = hdr.nextElementSibling;
+      const tog = hdr.querySelector(".cat-tog");
       body.classList.toggle("c");
       tog.classList.toggle("c");
     });
@@ -311,7 +410,7 @@ function initSortable() {
   // Item click → detail panel
   document.querySelectorAll(".item-row").forEach(row => {
     row.addEventListener("click", (e) => {
-      if (e.target.closest(".rbtn")) return; // don't trigger on button click
+      if (e.target.closest(".rbtn")) return;
       const path = row.dataset.path;
       const item = data.items.find(i => i.path === path);
       if (item) showDetail(item, row);
@@ -332,6 +431,8 @@ function initSortable() {
         openMoveModal(item);
       } else if (btn.dataset.action === "open") {
         window.open(`vscode://file${item.path}`, "_blank");
+      } else if (btn.dataset.action === "delete") {
+        openDeleteModal(item);
       }
     });
   });
@@ -359,6 +460,9 @@ function setupDetailPanel() {
   document.getElementById("detailMove").addEventListener("click", () => {
     if (selectedItem && !selectedItem.locked) openMoveModal(selectedItem);
   });
+  document.getElementById("detailDelete").addEventListener("click", () => {
+    if (selectedItem && !selectedItem.locked) openDeleteModal(selectedItem);
+  });
 }
 
 function showDetail(item, rowEl) {
@@ -375,8 +479,9 @@ function showDetail(item, rowEl) {
   document.getElementById("detailDate").textContent = item.mtime || "—";
   document.getElementById("detailPath").textContent = item.path;
 
-  // Show/hide move button
+  // Show/hide move and delete buttons
   document.getElementById("detailMove").style.display = item.locked ? "none" : "";
+  document.getElementById("detailDelete").style.display = item.locked ? "none" : "";
 
   // Highlight row
   document.querySelectorAll(".item-row.selected").forEach(r => r.classList.remove("selected"));
@@ -427,6 +532,26 @@ function showDragConfirm(item, fromScope, toScope) {
 
 // ── Modals ───────────────────────────────────────────────────────────
 
+function openDeleteModal(item) {
+  pendingDelete = item;
+  const catConfig = CATEGORIES[item.category] || { icon: "📄", label: item.category };
+  const scope = data.scopes.find(s => s.id === item.scopeId);
+
+  document.getElementById("deletePreview").innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span style="font-size:1.1rem;">${catConfig.icon}</span>
+      <div>
+        <div style="font-weight:700;color:var(--text-primary);font-size:0.88rem;">${esc(item.name)}</div>
+        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;">${esc(scope?.name || item.scopeId)} · ${esc(item.category)}</div>
+      </div>
+    </div>
+    <div style="font-size:0.68rem;color:#dc2626;margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);">
+      ${item.category === "skill" ? "This will delete the entire skill folder and all its files." : "This will permanently delete the file."}
+    </div>`;
+
+  document.getElementById("deleteModal").classList.remove("hidden");
+}
+
 function setupModals() {
   // Drag confirm
   document.getElementById("dcCancel").addEventListener("click", () => {
@@ -453,6 +578,25 @@ function setupModals() {
       document.getElementById("dragConfirmModal").classList.add("hidden");
       if (pendingDrag?.revertFn) pendingDrag.revertFn();
       pendingDrag = null;
+    }
+  });
+
+  // Delete modal
+  document.getElementById("deleteCancel").addEventListener("click", () => {
+    document.getElementById("deleteModal").classList.add("hidden");
+    pendingDelete = null;
+  });
+  document.getElementById("deleteConfirm").addEventListener("click", async () => {
+    document.getElementById("deleteModal").classList.add("hidden");
+    if (pendingDelete) {
+      await doDelete(pendingDelete.path);
+      pendingDelete = null;
+    }
+  });
+  document.getElementById("deleteModal").addEventListener("click", (e) => {
+    if (e.target === document.getElementById("deleteModal")) {
+      document.getElementById("deleteModal").classList.add("hidden");
+      pendingDelete = null;
     }
   });
 }
@@ -545,6 +689,14 @@ function closeMoveModal() {
 
 // ── API calls ────────────────────────────────────────────────────────
 
+async function refreshUI() {
+  saveExpandState();
+  data = await fetchJson("/api/scan");
+  renderPills();
+  renderTree();
+  closeDetail();
+}
+
 async function doMove(itemPath, toScopeId) {
   const response = await fetch("/api/move", {
     method: "POST",
@@ -555,11 +707,25 @@ async function doMove(itemPath, toScopeId) {
 
   if (result.ok) {
     toast(result.message);
-    // Refresh everything
-    data = await fetchJson("/api/scan");
-    renderPills();
-    renderTree();
-    closeDetail();
+    await refreshUI();
+  } else {
+    toast(result.error, true);
+  }
+
+  return result;
+}
+
+async function doDelete(itemPath) {
+  const response = await fetch("/api/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ itemPath }),
+  });
+  const result = await response.json();
+
+  if (result.ok) {
+    toast(result.message);
+    await refreshUI();
   } else {
     toast(result.error, true);
   }

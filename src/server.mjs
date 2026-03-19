@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { scan } from "./scanner.mjs";
-import { moveItem, getValidDestinations } from "./mover.mjs";
+import { moveItem, deleteItem, getValidDestinations } from "./mover.mjs";
 
 const UI_DIR = join(import.meta.dirname, "ui");
 
@@ -84,6 +84,22 @@ async function handleRequest(req, res) {
     return json(res, result, result.ok ? 200 : 400);
   }
 
+  // POST /api/delete — delete an item
+  if (path === "/api/delete" && req.method === "POST") {
+    const { itemPath } = await readBody(req);
+
+    if (!cachedData) await freshScan();
+
+    const item = cachedData.items.find(i => i.path === itemPath && !i.locked);
+    if (!item) return json(res, { ok: false, error: "Item not found or locked" }, 400);
+
+    const result = await deleteItem(item, cachedData.scopes);
+
+    if (result.ok) await freshScan();
+
+    return json(res, result, result.ok ? 200 : 400);
+  }
+
   // GET /api/destinations?path=...&category=... — valid move destinations
   if (path === "/api/destinations" && req.method === "GET") {
     if (!cachedData) await freshScan();
@@ -121,6 +137,12 @@ async function handleRequest(req, res) {
     return serveFile(res, join(UI_DIR, "app.js"));
   }
 
+  // Suppress favicon 404
+  if (path === "/favicon.ico") {
+    res.writeHead(204);
+    return res.end();
+  }
+
   // ── 404 ──
   res.writeHead(404);
   res.end("Not found");
@@ -128,7 +150,7 @@ async function handleRequest(req, res) {
 
 // ── Start server ─────────────────────────────────────────────────────
 
-export function startServer(port = 3847) {
+export function startServer(port = 3847, maxRetries = 10) {
   const server = createServer(async (req, res) => {
     try {
       await handleRequest(req, res);
@@ -139,9 +161,25 @@ export function startServer(port = 3847) {
     }
   });
 
-  server.listen(port, () => {
-    console.log(`Claude Inventory running at http://localhost:${port}`);
+  let attempt = 0;
+  function tryListen(p) {
+    server.listen(p, () => {
+      console.log(`Claude Inventory running at http://localhost:${p}`);
+    });
+  }
+
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE" && attempt < maxRetries) {
+      attempt++;
+      const nextPort = port + attempt;
+      console.log(`Port ${port + attempt - 1} in use, trying ${nextPort}...`);
+      tryListen(nextPort);
+    } else {
+      console.error(`Failed to start server: ${err.message}`);
+      process.exit(1);
+    }
   });
 
+  tryListen(port);
   return server;
 }
