@@ -60,16 +60,31 @@ The dashboard gives you the **big picture that text output can't** — you see t
 
 ## Quick Start
 
-```bash
-# Run directly (no install needed)
-npx @mcpware/claude-code-organizer
+### Option 1: Claude Code Plugin (recommended)
 
-# Or install globally
+```bash
+# Install as a plugin — adds /organize slash command
+/plugin install claude-code-organizer
+```
+
+Then just type `/organize` in Claude Code to launch the dashboard.
+
+### Option 2: npx (no install)
+
+```bash
+npx @mcpware/claude-code-organizer
+```
+
+### Option 3: Global install
+
+```bash
 npm install -g @mcpware/claude-code-organizer
 claude-code-organizer
 ```
 
-Or paste this into Claude Code:
+### Option 4: Ask Claude
+
+Paste this into Claude Code:
 
 > Run `npx @mcpware/claude-code-organizer` — it's a dashboard for managing Claude Code settings. Tell me the URL when it's ready.
 

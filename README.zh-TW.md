@@ -60,16 +60,31 @@ Claude Code 用 CLI 都可以 list 同搬 file。咁點解仲要呢個工具？
 
 ## 快速開始
 
-```bash
-# 直接執行，不用安裝
-npx @mcpware/claude-code-organizer
+### 方式1：Claude Code Plugin（推薦）
 
-# 或是全域安裝
+```bash
+# 裝成 Plugin — 自動加 /organize 指令
+/plugin install claude-code-organizer
+```
+
+之後喺 Claude Code 打 `/organize` 就可以開儀表板。
+
+### 方式2：npx（免安裝）
+
+```bash
+npx @mcpware/claude-code-organizer
+```
+
+### 方式3：全域安裝
+
+```bash
 npm install -g @mcpware/claude-code-organizer
 claude-code-organizer
 ```
 
-或是直接把這段話貼給 Claude Code：
+### 方式4：叫 Claude 幫你跑
+
+直接貼呢段話俾 Claude Code：
 
 > 幫我跑 `npx @mcpware/claude-code-organizer`，這是管理 Claude Code 設定的儀表板。跑起來後告訴我 URL。
 
