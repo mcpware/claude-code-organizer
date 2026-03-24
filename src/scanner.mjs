@@ -613,7 +613,7 @@ async function scanPlans(scope) {
       sizeBytes: s ? s.size : 0,
       mtime: s ? s.mtime.toISOString().slice(0, 10) : "",
       path: fullPath,
-      locked: true, // plans are ephemeral, don't move
+      // plans are standalone .md files, movable like memories
     });
   }
 

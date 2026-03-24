@@ -368,7 +368,7 @@ test.describe('API Layer', () => {
     const { items } = await (await fetch(`${env.baseURL}/api/scan`)).json();
 
     // These categories must ALL be locked
-    const lockedCategories = ['config', 'hook', 'plan', 'plugin'];
+    const lockedCategories = ['config', 'hook', 'plugin'];
     for (const cat of lockedCategories) {
       const catItems = items.filter(i => i.category === cat);
       for (const item of catItems) {
@@ -377,7 +377,7 @@ test.describe('API Layer', () => {
     }
 
     // These categories must NOT be locked
-    const movableCategories = ['memory', 'skill', 'mcp'];
+    const movableCategories = ['memory', 'skill', 'mcp', 'plan'];
     for (const cat of movableCategories) {
       const catItems = items.filter(i => i.category === cat);
       for (const item of catItems) {
@@ -407,12 +407,10 @@ test.describe('API Layer', () => {
       await expect(firstConfig.locator('.rbtn')).toHaveCount(0);
     }
 
-    // Plan items same
+    // Plan items should have checkboxes (movable, not locked)
     const planRows = page.locator('.item-row[data-category="plan"]');
     if (await planRows.count() > 0) {
-      const firstPlan = planRows.first();
-      await expect(firstPlan.locator('.row-chk')).toHaveCount(0);
-      await expect(firstPlan.locator('.rbtn')).toHaveCount(0);
+      await expect(planRows.first().locator('.row-chk')).toHaveCount(1);
     }
   });
 

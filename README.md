@@ -102,7 +102,7 @@ Opens a dashboard at `http://localhost:3847`. Works with your real `~/.claude/` 
 | MCP Servers | Yes | Yes | Global + Project | — |
 | Config (CLAUDE.md, settings.json) | Yes | Locked | Global + Project | System settings — move could break config |
 | Hooks | Yes | Locked | Global + Project | Depends on settings context — silent failures if moved |
-| Plans | Yes | Locked | Global + Project | Ephemeral, session-specific |
+| Plans | Yes | Yes | Global + Project | — |
 | Plugins | Yes | Locked | Global only | Claude Code managed cache |
 
 ## Scope Hierarchy

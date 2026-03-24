@@ -32,6 +32,11 @@ function resolveSkillDir(scopeId, scopes) {
   return join(scope.repoDir, ".claude", "skills");
 }
 
+function resolvePlanDir(scopeId) {
+  if (scopeId === "global") return join(CLAUDE_DIR, "plans");
+  return join(CLAUDE_DIR, "projects", scopeId, "plans");
+}
+
 function resolveMcpJson(scopeId, scopes) {
   if (scopeId === "global") return join(CLAUDE_DIR, ".mcp.json");
   const scope = scopes.find(s => s.id === scopeId);
@@ -52,8 +57,8 @@ function validateMove(item, toScopeId) {
     return { ok: false, error: "Item is already in this scope" };
   }
 
-  // Only memory, skill, mcp can move
-  const movableCategories = ["memory", "skill", "mcp"];
+  // Only memory, skill, mcp, plan can move
+  const movableCategories = ["memory", "skill", "mcp", "plan"];
   if (!movableCategories.includes(item.category)) {
     return { ok: false, error: `${item.category} items cannot be moved` };
   }
@@ -105,6 +110,27 @@ async function moveSkill(item, toScopeId, scopes) {
     from: item.path,
     to: toPath,
     message: `Moved skill "${item.name}" from ${item.scopeId} to ${toScopeId}`,
+  };
+}
+
+// ── Move plan file ──────────────────────────────────────────────────
+
+async function movePlan(item, toScopeId) {
+  const toDir = resolvePlanDir(toScopeId);
+  const toPath = join(toDir, item.fileName);
+
+  if (existsSync(toPath)) {
+    return { ok: false, error: `File already exists at destination: ${item.fileName}` };
+  }
+
+  await mkdir(toDir, { recursive: true });
+  await rename(item.path, toPath);
+
+  return {
+    ok: true,
+    from: item.path,
+    to: toPath,
+    message: `Moved plan "${item.name}" from ${item.scopeId} to ${toScopeId}`,
   };
 }
 
@@ -185,6 +211,8 @@ export async function moveItem(item, toScopeId, scopes) {
         return await moveSkill(item, toScopeId, scopes);
       case "mcp":
         return await moveMcp(item, toScopeId, scopes);
+      case "plan":
+        return await movePlan(item, toScopeId);
       default:
         return { ok: false, error: `Unknown category: ${item.category}` };
     }
@@ -232,7 +260,7 @@ export async function deleteItem(item, scopes) {
     return { ok: false, error: `${item.name} is locked and cannot be deleted` };
   }
 
-  const deletableCategories = ["memory", "skill", "mcp"];
+  const deletableCategories = ["memory", "skill", "mcp", "plan"];
   if (!deletableCategories.includes(item.category)) {
     return { ok: false, error: `${item.category} items cannot be deleted` };
   }
@@ -271,6 +299,8 @@ export function getValidDestinations(item, scopes) {
           return s.id === "global" || s.repoDir;
         case "mcp":
           return true; // mcp can go to any scope
+        case "plan":
+          return true; // plans can go to any scope
         default:
           return false;
       }
