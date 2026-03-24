@@ -24,3 +24,4 @@ marketing/
 # Plugin packaging (distributed separately)
 .claude-plugin/
 skills/
+test-results/
