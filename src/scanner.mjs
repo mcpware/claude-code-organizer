@@ -452,15 +452,22 @@ async function scanMcpServers(scope) {
 
 async function scanConfigs(scope) {
   const items = [];
-  if (scope.id !== "global") return items;
-
-  const configs = [
-    { name: "CLAUDE.md", path: join(CLAUDE_DIR, "CLAUDE.md"), desc: "Global instructions" },
-    { name: "settings.json", path: join(CLAUDE_DIR, "settings.json"), desc: "Global settings" },
-    { name: "settings.local.json", path: join(CLAUDE_DIR, "settings.local.json"), desc: "Local settings override" },
-    { name: "CLAUDE.md (managed)", path: join(MANAGED_DIR, "CLAUDE.md"), desc: "Enterprise managed instructions" },
-    { name: "managed-settings.json", path: join(MANAGED_DIR, "managed-settings.json"), desc: "Enterprise managed settings" },
-  ];
+  const configs = scope.id === "global"
+    ? [
+        { name: "CLAUDE.md", path: join(CLAUDE_DIR, "CLAUDE.md"), desc: "Global instructions" },
+        { name: "settings.json", path: join(CLAUDE_DIR, "settings.json"), desc: "Global settings" },
+        { name: "settings.local.json", path: join(CLAUDE_DIR, "settings.local.json"), desc: "Local settings override" },
+        { name: "CLAUDE.md (managed)", path: join(MANAGED_DIR, "CLAUDE.md"), desc: "Enterprise managed instructions" },
+        { name: "managed-settings.json", path: join(MANAGED_DIR, "managed-settings.json"), desc: "Enterprise managed settings" },
+      ]
+    : scope.repoDir
+      ? [
+          { name: "CLAUDE.md", path: join(scope.repoDir, "CLAUDE.md"), desc: "Project instructions" },
+          { name: ".claude/CLAUDE.md", path: join(scope.repoDir, ".claude", "CLAUDE.md"), desc: "Project instructions" },
+          { name: ".claude/settings.json", path: join(scope.repoDir, ".claude", "settings.json"), desc: "Project settings" },
+          { name: ".claude/settings.local.json", path: join(scope.repoDir, ".claude", "settings.local.json"), desc: "Project local settings" },
+        ]
+      : [];
 
   for (const cfg of configs) {
     if (!(await exists(cfg.path))) continue;
@@ -485,14 +492,19 @@ async function scanConfigs(scope) {
 
 async function scanHooks(scope) {
   const items = [];
-  if (scope.id !== "global") return items;
 
-  // Scan all settings sources for hooks (user, local, managed)
-  const hookSources = [
-    { path: join(CLAUDE_DIR, "settings.json"), label: "settings.json" },
-    { path: join(CLAUDE_DIR, "settings.local.json"), label: "settings.local.json" },
-    { path: join(MANAGED_DIR, "managed-settings.json"), label: "managed-settings.json" },
-  ];
+  const hookSources = scope.id === "global"
+    ? [
+        { path: join(CLAUDE_DIR, "settings.json"), label: "settings.json" },
+        { path: join(CLAUDE_DIR, "settings.local.json"), label: "settings.local.json" },
+        { path: join(MANAGED_DIR, "managed-settings.json"), label: "managed-settings.json" },
+      ]
+    : scope.repoDir
+      ? [
+          { path: join(scope.repoDir, ".claude", "settings.json"), label: "settings.json" },
+          { path: join(scope.repoDir, ".claude", "settings.local.json"), label: "settings.local.json" },
+        ]
+      : [];
 
   for (const source of hookSources) {
     const content = await safeReadFile(source.path);
@@ -561,13 +573,19 @@ async function scanPlugins() {
   return items;
 }
 
-async function scanPlans() {
+async function scanPlans(scope) {
   const items = [];
-  const settings = await getSettingsOverrides();
-  const plansDir = settings.plansDirectory
-    ? join(process.cwd(), settings.plansDirectory)
-    : join(CLAUDE_DIR, "plans");
-  if (!(await exists(plansDir))) return items;
+  let plansDir = null;
+  if (scope.id === "global") {
+    const settings = await getSettingsOverrides();
+    plansDir = settings.plansDirectory
+      ? join(process.cwd(), settings.plansDirectory)
+      : join(CLAUDE_DIR, "plans");
+  } else if (scope.claudeProjectDir) {
+    plansDir = join(scope.claudeProjectDir, "plans");
+  }
+
+  if (!plansDir || !(await exists(plansDir))) return items;
 
   const files = await readdir(plansDir);
   for (const f of files) {
@@ -585,7 +603,7 @@ async function scanPlans() {
 
     items.push({
       category: "plan",
-      scopeId: "global",
+      scopeId: scope.id,
       name: f.replace(".md", ""),
       fileName: f,
       description: desc,
@@ -618,22 +636,20 @@ export async function scan() {
 
   // Scan per-scope items
   for (const scope of scopes) {
-    const [memories, skills, mcpServers, configs, hooks] = await Promise.all([
+    const [memories, skills, mcpServers, configs, hooks, plans] = await Promise.all([
       scanMemories(scope),
       scanSkills(scope),
       scanMcpServers(scope),
       scanConfigs(scope),
       scanHooks(scope),
+      scanPlans(scope),
     ]);
-    allItems.push(...memories, ...skills, ...mcpServers, ...configs, ...hooks);
+    allItems.push(...memories, ...skills, ...mcpServers, ...configs, ...hooks, ...plans);
   }
 
   // Scan global-only items
-  const [plugins, plans] = await Promise.all([
-    scanPlugins(),
-    scanPlans(),
-  ]);
-  allItems.push(...plugins, ...plans);
+  const plugins = await scanPlugins();
+  allItems.push(...plugins);
 
   // Build counts
   const counts = { total: allItems.length };

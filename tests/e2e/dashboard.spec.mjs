@@ -158,15 +158,43 @@ async function createTestEnv() {
     }
   }, null, 2));
 
-  // ── Settings + hooks ──
+  // ── Global settings + hooks ──
   await writeFile(join(claudeDir, 'settings.json'), JSON.stringify({
     hooks: {
       'PreToolUse': [{
         matcher: 'Bash',
-        hooks: [{ type: 'command', command: 'echo "hook fired"' }]
+        hooks: [{ type: 'command', command: 'echo "global hook"' }]
       }]
     }
   }, null, 2));
+
+  // ── Project-level configs ──
+  await writeFile(join(projectDir, 'CLAUDE.md'), '# Workspace Instructions\nUse ESM imports only.');
+  await writeFile(join(projectDir, '.claude', 'settings.json'), JSON.stringify({
+    hooks: {
+      'PostToolUse': [{
+        matcher: 'Write',
+        hooks: [{ type: 'command', command: 'echo "project hook"' }]
+      }]
+    }
+  }, null, 2));
+
+  // ── Project-level MCP (in repo root) ──
+  await writeFile(join(projectDir, '.mcp.json'), JSON.stringify({
+    mcpServers: {
+      'project-mcp': { command: 'node', args: ['local-server.js'] },
+    }
+  }, null, 2));
+
+  // ── Project-level plans ──
+  const projectPlansDir = join(claudeDir, 'projects', encodedProject, 'plans');
+  await mkdir(projectPlansDir, { recursive: true });
+  await writeFile(join(projectPlansDir, 'refactor-auth.md'), '# Refactor Auth\nMigrate auth to OAuth2.');
+
+  // ── Global plans ──
+  const globalPlansDir = join(claudeDir, 'plans');
+  await mkdir(globalPlansDir, { recursive: true });
+  await writeFile(join(globalPlansDir, 'roadmap.md'), '# Roadmap\nQ2 goals and milestones.');
 
   // ── Start server ──
   const server = await new Promise((resolve, reject) => {
@@ -263,9 +291,10 @@ test.describe('API Layer', () => {
 
     expect(counts.memory).toBe(7);   // 4 global + 1 project + 1 nested + 1 deep
     expect(counts.skill).toBe(3);    // 2 global + 1 project
-    expect(counts.mcp).toBe(2);      // 2 MCP servers
-    expect(counts.config).toBeGreaterThanOrEqual(1); // settings.json at minimum
-    expect(counts.hook).toBe(1);     // 1 hook from settings
+    expect(counts.mcp).toBe(3);      // 2 global + 1 project MCP
+    expect(counts.config).toBeGreaterThanOrEqual(2); // global settings + project CLAUDE.md + project settings
+    expect(counts.hook).toBe(2);     // 1 global hook + 1 project hook
+    expect(counts.plan).toBe(2);     // 1 global plan + 1 project plan
   });
 
   test('scan returns correct memory metadata', async () => {
@@ -291,6 +320,48 @@ test.describe('API Layer', () => {
     expect(data.currentScopeId).toBe('global');
     // Memory can go to any scope — should have project, nested, deep
     expect(data.destinations.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test('scan detects project-level CLAUDE.md as config', async () => {
+    const { items } = await (await fetch(`${env.baseURL}/api/scan`)).json();
+    const projectConfig = items.find(i =>
+      i.category === 'config' && i.scopeId === env.encodedProject && i.name === 'CLAUDE.md'
+    );
+    expect(projectConfig).toBeTruthy();
+    expect(projectConfig.description).toBe('Project instructions');
+  });
+
+  test('scan detects project-level hooks from settings.json', async () => {
+    const { items } = await (await fetch(`${env.baseURL}/api/scan`)).json();
+    const projectHook = items.find(i =>
+      i.category === 'hook' && i.scopeId === env.encodedProject
+    );
+    expect(projectHook).toBeTruthy();
+    expect(projectHook.name).toBe('PostToolUse');
+    expect(projectHook.description).toContain('project hook');
+  });
+
+  test('scan detects project-level plans', async () => {
+    const { items } = await (await fetch(`${env.baseURL}/api/scan`)).json();
+
+    // Global plan
+    const globalPlan = items.find(i => i.category === 'plan' && i.scopeId === 'global');
+    expect(globalPlan).toBeTruthy();
+    expect(globalPlan.name).toBe('roadmap');
+
+    // Project plan
+    const projectPlan = items.find(i => i.category === 'plan' && i.scopeId === env.encodedProject);
+    expect(projectPlan).toBeTruthy();
+    expect(projectPlan.name).toBe('refactor-auth');
+  });
+
+  test('scan detects project-level MCP from repo .mcp.json', async () => {
+    const { items } = await (await fetch(`${env.baseURL}/api/scan`)).json();
+    const projectMcp = items.find(i =>
+      i.category === 'mcp' && i.scopeId === env.encodedProject && i.name === 'project-mcp'
+    );
+    expect(projectMcp).toBeTruthy();
+    expect(projectMcp.description).toContain('local-server.js');
   });
 
   test('GET /api/destinations rejects locked items', async () => {
