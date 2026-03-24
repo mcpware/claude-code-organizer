@@ -1,57 +1,92 @@
 /**
  * app.js — Frontend logic for Claude Code Organizer.
  *
- * Fetches data from /api/scan, renders the scope tree,
- * handles drag-and-drop (SortableJS), search, filter, detail panel.
- *
- * All DOM rendering is here. Change index.html for structure,
- * style.css for appearance, this file for behavior.
+ * Fetches data from /api/scan, renders the approved three-panel UI,
+ * and keeps the existing search, filter, drag/drop, detail, bulk,
+ * move, delete, and undo behaviors.
  */
 
-// ── State ────────────────────────────────────────────────────────────
+let data = null;
+let activeFilters = new Set();
+let selectedItem = null;
+let selectedScopeId = null;
+let pendingDrag = null;
+let pendingDelete = null;
+let draggingItem = null;
+let bulkSelected = new Set();
+let searchQuery = "";
+let selectMode = false;
+let toastTimer = null;
+let detailPreviewKey = null;
 
-let data = null;         // { scopes, items, counts }
-let activeFilters = new Set(); // empty = show all, or set of "memory", "skill", "mcp", etc.
-let selectedItem = null; // currently selected item object
-let pendingDrag = null;  // { item, fromScopeId, toScopeId, revertFn }
-let pendingDelete = null; // item to delete
-let draggingItem = null; // item currently being dragged
-let expandState = { scopes: new Set(), cats: new Set() }; // track expanded sections
-let bulkSelected = new Set(); // paths of selected items for bulk ops
+const uiState = {
+  expandedScopes: new Set(),
+  collapsedCats: new Set(),
+  collapsedBundles: new Set(),
+  sortBy: {}, // { [catKey]: { field: "size"|"date"|"name", dir: "asc"|"desc" } }
+};
 
-// ── Category config ──────────────────────────────────────────────────
+const CATEGORY_ORDER = ["skill", "memory", "mcp", "plan", "config", "hook", "plugin", "session"];
 
 const CATEGORIES = {
-  config:  { icon: "⚙️", label: "CONFIG",      group: null },
-  memory:  { icon: "🧠", label: "MEMORIES",    group: "memory" },
-  skill:   { icon: "⚡", label: "SKILLS",      group: "skill" },
-  mcp:     { icon: "🔌", label: "MCP SERVERS", group: "mcp" },
-  hook:    { icon: "🪝", label: "HOOKS",       group: null },
-  plugin:  { icon: "🧩", label: "PLUGINS",     group: null },
-  plan:    { icon: "📐", label: "PLANS",       group: null },
-  session: { icon: "💬", label: "SESSIONS",    group: null },
+  memory: { icon: "🧠", label: "Memories", filterLabel: "Memories", group: "memory" },
+  skill: { icon: "⚡", label: "Skills", filterLabel: "Skills", group: "skill" },
+  session: { icon: "💬", label: "Sessions", filterLabel: "Sessions", group: null },
+  mcp: { icon: "🔌", label: "MCP Servers", filterLabel: "MCP", group: "mcp" },
+  plan: { icon: "📐", label: "Plans", filterLabel: "Plans", group: "plan" },
+  config: { icon: "⚙️", label: "Config", filterLabel: "Config", group: null },
+  hook: { icon: "🪝", label: "Hooks", filterLabel: "Hooks", group: null },
+  plugin: { icon: "🧩", label: "Plugins", filterLabel: "Plugins", group: null },
 };
 
 const ITEM_ICONS = {
-  memory: "🧠", skill: "⚡", mcp: "🔌", config: "⚙️",
-  hook: "🪝", plugin: "🧩", plan: "📐", session: "💬",
+  memory: "🧠",
+  skill: "⚡",
+  session: "💬",
+  mcp: "🔌",
+  plan: "📐",
+  config: "⚙️",
+  hook: "🪝",
+  plugin: "🧩",
 };
 
-const SCOPE_ICONS = { global: "🌐", workspace: "📂", project: "📂" };
+const SCOPE_ICONS = {
+  global: "🌐",
+  workspace: "📂",
+  project: "📂",
+};
 
-// ── Init ─────────────────────────────────────────────────────────────
+const BADGE_CLASS = {
+  feedback: "ib-feedback",
+  user: "ib-user",
+  project: "ib-project",
+  reference: "ib-reference",
+  skill: "ib-skill",
+  mcp: "ib-mcp",
+  session: "ib-session",
+  config: "ib-config",
+  hook: "ib-hook",
+  plugin: "ib-plugin",
+  plan: "ib-plan",
+  memory: "ib-feedback",
+};
+
+const SHORT_DATE = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+});
 
 async function init() {
-  data = await fetchJson("/api/scan");
-  document.getElementById("loading").style.display = "none";
-  renderPills();
-  renderTree();
-  setupSearch();
-  setupDetailPanel();
-  setupModals();
-  setupBulkBar();
-  setupScopeDropZones();
-  setupExpandToggle();
+  try {
+    data = await fetchJson("/api/scan");
+    selectedScopeId = getInitialSelectedScopeId();
+    initializeScopeState();
+    setupUi();
+    renderAll();
+  } catch (error) {
+    document.getElementById("loading").textContent = "Failed to load inventory";
+    toast(error?.message || "Failed to load inventory", true);
+  }
 }
 
 async function fetchJson(url) {
@@ -59,497 +94,201 @@ async function fetchJson(url) {
   return res.json();
 }
 
-// ── Pills (filter tabs with counts) ──────────────────────────────────
+function setupUi() {
+  setupSearch();
+  setupSidebarTree();
+  setupFilterBar();
+  setupItemList();
+  setupDetailPanel();
+  setupModals();
+  setupBulkBar();
+  setupScopeDropZones();
+  setupThemeToggle();
+  setupCcActions();
+  setupResizers();
+}
 
-function renderPills() {
-  const el = document.getElementById("pills");
-  const pills = [
-    { key: "all", label: "All", count: data.counts.total },
-    { key: "memory", label: "🧠 Memory", count: data.counts.memory || 0 },
-    { key: "skill", label: "⚡ Skills", count: data.counts.skill || 0 },
-    { key: "mcp", label: "🔌 MCP", count: data.counts.mcp || 0 },
-    { key: "config", label: "⚙️ Config", count: data.counts.config || 0 },
-    { key: "hook", label: "🪝 Hooks", count: data.counts.hook || 0 },
-    { key: "plugin", label: "🧩 Plugins", count: data.counts.plugin || 0 },
-    { key: "plan", label: "📐 Plans", count: data.counts.plan || 0 },
-    { key: "session", label: "💬 Sessions", count: data.counts.session || 0 },
-  ];
+function setupSearch() {
+  const input = document.getElementById("searchInput");
+  input.addEventListener("input", () => {
+    searchQuery = input.value.trim().toLowerCase();
+    renderAll();
+  });
+}
 
-  // "All" is active when no filters selected
-  const allActive = activeFilters.size === 0;
-
-  el.innerHTML = pills.map(p => {
-    const isActive = p.key === "all" ? allActive : activeFilters.has(p.key);
-    return `<span class="pill${isActive ? ' active' : ''}" data-filter="${p.key}">${p.label} <b>${p.count}</b></span>`;
-  }).join("");
-
-  el.querySelectorAll(".pill").forEach(pill => {
-    pill.addEventListener("click", () => {
-      const key = pill.dataset.filter;
-      if (key === "all") {
-        // Clear all filters → show everything
+function setupSidebarTree() {
+  document.getElementById("sidebarTree").addEventListener("click", (event) => {
+    const catRow = event.target.closest(".s-cat");
+    if (catRow) {
+      selectedScopeId = catRow.dataset.scopeId;
+      expandScopePath(selectedScopeId);
+      const cat = catRow.dataset.cat;
+      if (activeFilters.size === 1 && activeFilters.has(cat)) {
         activeFilters.clear();
       } else {
-        // Toggle this filter
-        if (activeFilters.has(key)) {
-          activeFilters.delete(key);
-        } else {
-          activeFilters.add(key);
-        }
+        activeFilters = new Set([cat]);
       }
-      // Re-render pill states
-      const allNow = activeFilters.size === 0;
-      el.querySelectorAll(".pill").forEach(p => {
-        const k = p.dataset.filter;
-        p.classList.toggle("active", k === "all" ? allNow : activeFilters.has(k));
-      });
-      applyFilter();
-    });
-  });
-}
-
-function applyFilter() {
-  const hasFilter = activeFilters.size > 0;
-  document.querySelectorAll(".cat-hdr").forEach(hdr => {
-    const cat = hdr.dataset.cat;
-    const show = !hasFilter || activeFilters.has(cat);
-    hdr.style.display = show ? "" : "none";
-    const body = hdr.nextElementSibling;
-    if (body) body.style.display = show ? "" : "none";
-  });
-}
-
-// ── Tree rendering ───────────────────────────────────────────────────
-
-function renderTree() {
-  const treeEl = document.getElementById("tree");
-  const rootScopes = data.scopes.filter(s => s.parentId === null);
-
-  let html = "";
-
-  // Render from root — renderScope recursively handles children
-  for (const scope of rootScopes) {
-    html += renderScope(scope, 0);
-  }
-
-  treeEl.innerHTML = html;
-  initSortable();
-}
-
-function renderScope(scope, depth) {
-  const items = data.items.filter(i => i.scopeId === scope.id);
-  const childScopes = data.scopes.filter(s => s.parentId === scope.id);
-  const totalCount = items.length + childScopes.reduce((sum, cs) =>
-    sum + data.items.filter(i => i.scopeId === cs.id).length, 0
-  );
-
-  const icon = SCOPE_ICONS[scope.type] || "📂";
-  const tagClass = `tag-${scope.type}`;
-
-  // Build inheritance pills (inline in header)
-  let inheritHtml = "";
-  if (scope.parentId) {
-    const chain = getScopeChain(scope);
-    if (chain.length > 0) {
-      const pills = chain.map(s =>
-        `<span class="inherit-pill">${SCOPE_ICONS[s.type] || "📂"} ${esc(s.name)}</span>`
-      ).join(" ");
-      inheritHtml = `<span class="scope-inherit" title="Inherits from ${chain.map(s => s.name).join(' → ')}"><span class="inherit-arrow">↳</span> ${pills}</span>`;
+      renderAll();
+      return;
     }
-  }
 
-  // Group items by category
-  const categories = {};
-  for (const item of items) {
-    (categories[item.category] ??= []).push(item);
-  }
+    const toggle = event.target.closest(".s-tog");
+    if (toggle && !toggle.classList.contains("empty")) {
+      const hdr = toggle.closest(".s-scope-hdr");
+      if (!hdr) return;
+      const scopeId = hdr.dataset.scopeId;
+      if (uiState.expandedScopes.has(scopeId)) uiState.expandedScopes.delete(scopeId);
+      else uiState.expandedScopes.add(scopeId);
+      renderSidebar();
+      return;
+    }
 
-  // Sort memory items: feedback last, then alphabetical within each subType
-  if (categories.memory) {
-    const subTypeOrder = { project: 0, reference: 1, user: 2, feedback: 3 };
-    categories.memory.sort((a, b) => {
-      const oa = subTypeOrder[a.subType] ?? 2;
-      const ob = subTypeOrder[b.subType] ?? 2;
-      if (oa !== ob) return oa - ob;
-      return a.name.localeCompare(b.name);
-    });
-  }
+    const hdr = event.target.closest(".s-scope-hdr");
+    if (!hdr) return;
+    selectedScopeId = hdr.dataset.scopeId;
+    expandScopePath(selectedScopeId);
+    if (selectedItem && selectedItem.scopeId !== selectedScopeId) {
+      closeDetail();
+    }
+    renderAll();
+  });
+}
 
-  // Count sub-projects
-  const subInfo = childScopes.length > 0 ? `${childScopes.length} sub-projects` : "";
+function setupFilterBar() {
+  document.getElementById("pills").addEventListener("click", (event) => {
+    const selectBtn = event.target.closest("#selectBtn");
+    if (selectBtn) {
+      selectMode = !selectMode;
+      document.getElementById("app").classList.toggle("select-mode", selectMode);
+      renderPills();
+      updateBulkBar();
+      return;
+    }
 
-  let html = `
-    <div class="scope-block">
-      <div class="scope-hdr" data-scope-id="${esc(scope.id)}">
-        <span class="scope-tog">▼</span>
-        <span class="scope-ico">${icon}</span>
-        <span class="scope-nm">${esc(scope.name)}</span>
-        <span class="scope-tag ${tagClass}">${esc(scope.tag)}</span>
-        ${inheritHtml}
-        <span class="scope-info">${esc(subInfo)}</span>
-        <span class="scope-cnt">${totalCount}</span>
-      </div>
-      <div class="scope-body">`;
+    const pill = event.target.closest(".f-pill");
+    if (!pill) return;
 
-  // Render each category
-  for (const [cat, catItems] of Object.entries(categories)) {
-    const catConfig = CATEGORIES[cat] || { icon: "📄", label: cat.toUpperCase(), group: null };
-
-    // Skills: group by bundle if any items have bundle info
-    if (cat === "skill") {
-      const bundled = {};   // source → items[]
-      const unbundled = []; // items without bundle
-      for (const item of catItems) {
-        if (item.bundle) {
-          (bundled[item.bundle] ??= []).push(item);
-        } else {
-          unbundled.push(item);
-        }
-      }
-
-      const hasBundles = Object.keys(bundled).length > 0;
-
-      html += `
-        <div class="cat-hdr" data-cat="${esc(cat)}">
-          <span class="cat-tog">▼</span>
-          <span class="cat-ico">${catConfig.icon}</span>
-          <span class="cat-nm">${catConfig.label}</span>
-          <span class="cat-cnt">${catItems.length}</span>
-        </div>
-        <div class="cat-body" data-cat="${esc(cat)}">`;
-
-      // Render each bundle as a collapsible sub-group
-      for (const [source, bundleItems] of Object.entries(bundled)) {
-        const bundleName = source.split("/").pop(); // "pbakaus/impeccable" → "impeccable"
-        const bundleLabel = source; // full "owner/repo"
-        html += `
-          <div class="bundle-hdr" data-bundle="${esc(source)}">
-            <span class="bundle-tog">▼</span>
-            <span class="bundle-ico">📦</span>
-            <span class="bundle-nm">${esc(bundleName)}</span>
-            <span class="bundle-src">${esc(bundleLabel)}</span>
-            <span class="bundle-cnt">${bundleItems.length}</span>
-          </div>
-          <div class="bundle-body" data-bundle="${esc(source)}">
-            <div class="sortable-zone" data-scope="${esc(scope.id)}" data-group="${catConfig.group || 'none'}">
-              ${bundleItems.map(item => renderItem(item)).join("")}
-            </div>
-          </div>`;
-      }
-
-      // Render unbundled skills flat (no group header)
-      if (unbundled.length > 0) {
-        html += `
-          <div class="sortable-zone" data-scope="${esc(scope.id)}" data-group="${catConfig.group || 'none'}">
-            ${unbundled.map(item => renderItem(item)).join("")}
-          </div>`;
-      }
-
-      html += `</div>`;
+    const key = pill.dataset.filter;
+    if (key === "all") {
+      activeFilters.clear();
+    } else if (activeFilters.has(key)) {
+      activeFilters.delete(key);
     } else {
-      // Non-skill categories: render flat as before
-      html += `
-        <div class="cat-hdr" data-cat="${esc(cat)}">
-          <span class="cat-tog">▼</span>
-          <span class="cat-ico">${catConfig.icon}</span>
-          <span class="cat-nm">${catConfig.label}</span>
-          <span class="cat-cnt">${catItems.length}</span>
-        </div>
-        <div class="cat-body" data-cat="${esc(cat)}">
-          <div class="sortable-zone" data-scope="${esc(scope.id)}" data-group="${catConfig.group || 'none'}">
-            ${catItems.map(item => renderItem(item)).join("")}
-          </div>
-        </div>`;
+      activeFilters.add(key);
     }
-  }
 
-  // Render child scopes
-  if (childScopes.length > 0) {
-    html += `<div class="child-scopes">`;
-    for (const child of childScopes) {
-      html += renderScope(child, depth + 1);
-    }
-    html += `</div>`;
-  }
-
-  html += `</div></div>`;
-  return html;
-}
-
-function renderItem(item) {
-  const icon = ITEM_ICONS[item.category] || "📄";
-  const locked = item.locked ? " locked" : "";
-  const badgeClass = `b-${item.subType || item.category}`;
-  const checked = bulkSelected.has(item.path) ? " checked" : "";
-
-  const checkbox = item.locked ? "" : `<input type="checkbox" class="row-chk" data-path="${esc(item.path)}"${checked}>`;
-
-  const moveBtn = (item.locked || item.deletable) ? "" : `<button class="rbtn" data-action="move">Move</button>`;
-  const actions = item.locked ? "" : `
-    <span class="row-acts">
-      ${moveBtn}
-      <button class="rbtn" data-action="open">Open</button>
-      <button class="rbtn rbtn-danger" data-action="delete">Delete</button>
-    </span>`;
-
-  return `
-    <div class="item-row${locked}" data-path="${esc(item.path)}" data-category="${item.category}" data-name="${esc(item.name)}">
-      ${checkbox}
-      <span class="row-ico">${icon}</span>
-      <span class="row-name">${esc(item.name)}</span>
-      <span class="row-badge ${badgeClass}">${esc(item.subType || item.category)}</span>
-      <span class="row-desc">${esc(item.description)}</span>
-      <span class="row-meta">${esc(item.size)}${item.fileCount ? ` · ${item.fileCount} files` : ""}</span>
-      ${actions}
-    </div>`;
-}
-
-function getScopeChain(scope) {
-  const chain = [];
-  let current = scope;
-  while (current.parentId) {
-    const parent = data.scopes.find(s => s.id === current.parentId);
-    if (!parent) break;
-    chain.unshift(parent);
-    current = parent;
-  }
-  return chain;
-}
-
-function esc(s) {
-  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-// ── SortableJS init ──────────────────────────────────────────────────
-
-function saveExpandState() {
-  expandState.scopes.clear();
-  expandState.cats.clear();
-  document.querySelectorAll(".scope-hdr").forEach(hdr => {
-    const body = hdr.nextElementSibling;
-    if (body && !body.classList.contains("c")) {
-      expandState.scopes.add(hdr.dataset.scopeId);
-    }
-  });
-  document.querySelectorAll(".cat-hdr").forEach(hdr => {
-    const body = hdr.nextElementSibling;
-    const scopeId = hdr.closest(".scope-block")?.querySelector(".scope-hdr")?.dataset.scopeId || "";
-    const catKey = `${scopeId}::${hdr.dataset.cat}`;
-    if (body && !body.classList.contains("c")) {
-      expandState.cats.add(catKey);
-    }
-  });
-  // Save bundle expand state
-  document.querySelectorAll(".bundle-hdr").forEach(hdr => {
-    const body = hdr.nextElementSibling;
-    const scopeId = hdr.closest(".scope-block")?.querySelector(".scope-hdr")?.dataset.scopeId || "";
-    const bundleKey = `${scopeId}::bundle::${hdr.dataset.bundle}`;
-    if (body && !body.classList.contains("c")) {
-      expandState.cats.add(bundleKey);
-    }
+    renderAll();
   });
 }
 
-function restoreExpandState() {
-  // Scopes default open — collapse those NOT in saved state (only if we have saved state)
-  const hasSavedState = expandState.scopes.size > 0 || expandState.cats.size > 0;
-  document.querySelectorAll(".scope-hdr").forEach(hdr => {
-    const body = hdr.nextElementSibling;
-    const tog = hdr.querySelector(".scope-tog");
-    if (hasSavedState && !expandState.scopes.has(hdr.dataset.scopeId)) {
-      body?.classList.add("c");
-      tog?.classList.add("c");
-    }
-  });
+function setupItemList() {
+  const itemList = document.getElementById("itemList");
 
-  // Categories default collapsed — expand those in saved state
-  document.querySelectorAll(".cat-hdr").forEach(hdr => {
-    const body = hdr.nextElementSibling;
-    const tog = hdr.querySelector(".cat-tog");
-    const scopeId = hdr.closest(".scope-block")?.querySelector(".scope-hdr")?.dataset.scopeId || "";
-    const catKey = `${scopeId}::${hdr.dataset.cat}`;
-
-    if (expandState.cats.has(catKey)) {
-      body?.classList.remove("c");
-      tog?.classList.remove("c");
-    } else {
-      body?.classList.add("c");
-      tog?.classList.add("c");
-    }
-  });
-}
-
-function initSortable() {
-  document.querySelectorAll(".sortable-zone").forEach(el => {
-    const group = el.dataset.group;
-    if (!group || group === "none") return;
-
-    Sortable.create(el, {
-      group,
-      animation: 150,
-      ghostClass: "sortable-ghost",
-      chosenClass: "sortable-chosen",
-      draggable: ".item-row:not(.locked)",
-      fallbackOnBody: true,
-      scroll: document.querySelector(".tree-area"),
-      scrollSensitivity: 100,
-      scrollSpeed: 15,
-      bubbleScroll: true,
-      onStart(evt) {
-        const itemPath = evt.item.dataset.path;
-        draggingItem = data.items.find(i => i.path === itemPath);
-      },
-      onEnd(evt) {
-        draggingItem = null;
-        // Remove all drop-target highlights
-        document.querySelectorAll(".scope-block.drop-target").forEach(b => b.classList.remove("drop-target"));
-
-        if (evt.from === evt.to) return;
-
-        const itemEl = evt.item;
-        const itemPath = itemEl.dataset.path;
-        const item = data.items.find(i => i.path === itemPath);
-        if (!item) return;
-
-        const fromScopeId = evt.from.dataset.scope;
-        const toScopeId = evt.to.dataset.scope;
-        const fromScope = data.scopes.find(s => s.id === fromScopeId);
-        const toScope = data.scopes.find(s => s.id === toScopeId);
-
-        const oldParent = evt.from;
-        const oldIndex = evt.oldIndex;
-        const revertFn = () => {
-          if (oldIndex >= oldParent.children.length) oldParent.appendChild(itemEl);
-          else oldParent.insertBefore(itemEl, oldParent.children[oldIndex]);
-        };
-
-        pendingDrag = { item, fromScopeId, toScopeId, revertFn };
-        showDragConfirm(item, fromScope, toScope);
-      }
-    });
-  });
-
-  // Scope header toggle — default OPEN
-  document.querySelectorAll(".scope-hdr").forEach(hdr => {
-    hdr.addEventListener("click", () => {
-      const body = hdr.nextElementSibling;
-      const tog = hdr.querySelector(".scope-tog");
-      body.classList.toggle("c");
-      tog.classList.toggle("c");
-    });
-  });
-
-  // Category toggle — restore state or default collapsed
-  restoreExpandState();
-
-  document.querySelectorAll(".cat-hdr").forEach(hdr => {
-    hdr.addEventListener("click", () => {
-      const body = hdr.nextElementSibling;
-      const tog = hdr.querySelector(".cat-tog");
-      body.classList.toggle("c");
-      tog.classList.toggle("c");
-    });
-  });
-
-  // Bundle toggle — default collapsed
-  document.querySelectorAll(".bundle-hdr").forEach(hdr => {
-    const body = hdr.nextElementSibling;
-    const tog = hdr.querySelector(".bundle-tog");
-    // Default collapsed
-    const scopeId = hdr.closest(".scope-block")?.querySelector(".scope-hdr")?.dataset.scopeId || "";
-    const bundleKey = `${scopeId}::bundle::${hdr.dataset.bundle}`;
-    if (!expandState.cats.has(bundleKey)) {
-      body?.classList.add("c");
-      tog?.classList.add("c");
-    }
-    hdr.addEventListener("click", (e) => {
-      e.stopPropagation();
-      body.classList.toggle("c");
-      tog.classList.toggle("c");
-    });
-  });
-
-  // Helper: find item from row using path + category + name (handles items sharing same path, e.g. hooks vs config)
-  function findItemFromRow(row) {
-    const path = row.dataset.path;
-    const category = row.dataset.category;
-    const name = row.dataset.name;
-    return data.items.find(i => i.path === path && i.category === category && i.name === name)
-      || data.items.find(i => i.path === path && i.category === category)
-      || data.items.find(i => i.path === path);
-  }
-
-  // Item click → detail panel
-  document.querySelectorAll(".item-row").forEach(row => {
-    row.addEventListener("click", (e) => {
-      if (e.target.closest(".rbtn")) return;
-      const item = findItemFromRow(row);
-      if (item) showDetail(item, row);
-    });
-  });
-
-  // Item action buttons
-  document.querySelectorAll(".rbtn").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const row = btn.closest(".item-row");
-      const item = findItemFromRow(row);
+  itemList.addEventListener("click", (event) => {
+    const actionBtn = event.target.closest(".act-btn");
+    if (actionBtn) {
+      const itemEl = actionBtn.closest(".item");
+      const item = getItemByKey(itemEl?.dataset.itemKey);
       if (!item) return;
 
-      if (btn.dataset.action === "move") {
-        selectedItem = item;
+      if (actionBtn.dataset.action === "move") {
         openMoveModal(item);
-      } else if (btn.dataset.action === "open") {
+      } else if (actionBtn.dataset.action === "open") {
         window.open(`vscode://file${item.path}`, "_blank");
-      } else if (btn.dataset.action === "delete") {
+      } else if (actionBtn.dataset.action === "delete") {
         openDeleteModal(item);
       }
-    });
+      return;
+    }
+
+    if (event.target.closest(".item-chk")) return;
+
+    const sortBtn = event.target.closest(".sort-btn");
+    if (sortBtn) {
+      const cat = sortBtn.dataset.cat;
+      const field = sortBtn.dataset.sort;
+      const catKey = `${selectedScopeId}::${cat}`;
+      const current = uiState.sortBy[catKey];
+      if (current?.field === field) {
+        uiState.sortBy[catKey] = { field, dir: current.dir === "asc" ? "desc" : "asc" };
+      } else {
+        uiState.sortBy[catKey] = { field, dir: field === "date" ? "desc" : "asc" };
+      }
+      renderMainContent();
+      initSortable();
+      return;
+    }
+
+    const catHdr = event.target.closest(".cat-hdr");
+    if (catHdr && !event.target.closest(".sort-btn")) {
+      const key = `${selectedScopeId}::${catHdr.dataset.cat}`;
+      if (uiState.collapsedCats.has(key)) uiState.collapsedCats.delete(key);
+      else uiState.collapsedCats.add(key);
+      renderMainContent();
+      initSortable();
+      return;
+    }
+
+    const bundleRow = event.target.closest(".bundle-row");
+    if (bundleRow) {
+      const key = `${selectedScopeId}::${bundleRow.dataset.bundle}`;
+      if (uiState.collapsedBundles.has(key)) uiState.collapsedBundles.delete(key);
+      else uiState.collapsedBundles.add(key);
+      renderMainContent();
+      initSortable();
+      return;
+    }
+
+    const itemEl = event.target.closest(".item");
+    if (!itemEl) return;
+    const item = getItemByKey(itemEl.dataset.itemKey);
+    if (item) showDetail(item);
   });
 
-  // Checkbox handlers for bulk select
-  document.querySelectorAll(".row-chk").forEach(chk => {
-    chk.addEventListener("change", (e) => {
-      e.stopPropagation();
-      const path = chk.dataset.path;
-      if (chk.checked) bulkSelected.add(path);
-      else bulkSelected.delete(path);
-      updateBulkBar();
-    });
-    chk.addEventListener("click", (e) => e.stopPropagation());
+  itemList.addEventListener("change", (event) => {
+    const checkbox = event.target.closest(".item-chk");
+    if (!checkbox) return;
+
+    const key = checkbox.dataset.itemKey;
+    if (checkbox.checked) bulkSelected.add(key);
+    else bulkSelected.delete(key);
+    updateBulkBar();
   });
 }
 
-// ── Bulk operations ─────────────────────────────────────────────────
-
-function updateBulkBar() {
-  const bar = document.getElementById("bulkBar");
-  if (bulkSelected.size === 0) {
-    bar.classList.add("hidden");
-    return;
-  }
-  bar.classList.remove("hidden");
-  document.getElementById("bulkCount").textContent = `${bulkSelected.size} selected`;
+function setupDetailPanel() {
+  document.getElementById("detailClose").addEventListener("click", closeDetail);
+  document.getElementById("detailOpen").addEventListener("click", () => {
+    if (selectedItem) window.open(`vscode://file${selectedItem.path}`, "_blank");
+  });
+  document.getElementById("detailMove").addEventListener("click", () => {
+    if (selectedItem && (canMoveItem(selectedItem) || selectedItem.locked)) openMoveModal(selectedItem);
+  });
+  document.getElementById("detailDelete").addEventListener("click", () => {
+    if (selectedItem && canDeleteItem(selectedItem)) openDeleteModal(selectedItem);
+  });
 }
 
 function setupBulkBar() {
   document.getElementById("bulkClear").addEventListener("click", () => {
     bulkSelected.clear();
-    document.querySelectorAll(".row-chk").forEach(c => c.checked = false);
+    document.querySelectorAll(".item-chk").forEach((checkbox) => {
+      checkbox.checked = false;
+    });
     updateBulkBar();
   });
 
   document.getElementById("bulkDelete").addEventListener("click", async () => {
-    if (bulkSelected.size === 0) return;
-    const count = bulkSelected.size;
-    const paths = [...bulkSelected];
+    const items = getSelectedItems();
+    if (items.length === 0) return;
 
-    // Confirm
-    if (!confirm(`Delete ${count} item(s)? This cannot be undone.`)) return;
+    if (!confirm(`Delete ${items.length} item(s)? This cannot be undone.`)) return;
 
-    let ok = 0, fail = 0;
-    for (const p of paths) {
-      const result = await doDelete(p, true); // true = skip refresh
+    let ok = 0;
+    let fail = 0;
+
+    for (const item of items) {
+      const result = await doDelete(item, true);
       if (result.ok) ok++;
       else fail++;
     }
@@ -560,84 +299,855 @@ function setupBulkBar() {
   });
 
   document.getElementById("bulkMove").addEventListener("click", async () => {
-    if (bulkSelected.size === 0) return;
-    const paths = [...bulkSelected];
+    const items = getSelectedItems();
+    if (items.length === 0) return;
 
-    // All selected items must be same category for move
-    const items = paths.map(p => data.items.find(i => i.path === p)).filter(Boolean);
-    const categories = new Set(items.map(i => i.category));
+    const categories = new Set(items.map((item) => item.category));
     if (categories.size > 1) {
-      return toast("Cannot bulk-move items of different types", true);
+      toast("Cannot bulk-move items of different types", true);
+      return;
     }
 
-    // Only memory, skill, mcp can be moved
-    const movableCategories = new Set(["memory", "skill", "mcp"]);
-    const nonMovable = items.filter(i => !movableCategories.has(i.category));
+    const nonMovable = items.filter((item) => !canMoveItem(item));
     if (nonMovable.length > 0) {
-      return toast(`${nonMovable[0].category} items cannot be moved`, true);
+      toast(`${nonMovable[0].category} items cannot be moved`, true);
+      return;
     }
 
-    // Use first item to get destinations, then move all
     openBulkMoveModal(items);
   });
 }
 
-async function openBulkMoveModal(items) {
-  const first = items[0];
-  const res = await fetchJson(`/api/destinations?path=${encodeURIComponent(first.path)}&category=${encodeURIComponent(first.category)}&name=${encodeURIComponent(first.name)}`);
-  if (!res.ok) return toast(res.error, true);
-
-  const listEl = document.getElementById("moveDestList");
-  // Include current scope (grayed out) so tree hierarchy builds correctly
-  const currentScope = data.scopes.find(s => s.id === res.currentScopeId);
-  const allScopes = currentScope
-    ? [...res.destinations, { ...currentScope, isCurrent: true }]
-    : res.destinations;
-
-  const allScopeMap = {};
-  for (const s of data.scopes) allScopeMap[s.id] = s;
-  for (const s of allScopes) allScopeMap[s.id] = s;
-
-  function getDepth(scope) {
-    let depth = 0, cur = scope;
-    while (cur.parentId) { depth++; cur = allScopeMap[cur.parentId] || { parentId: null }; }
-    return depth;
-  }
-
-  // Sort then build tree order
-  allScopes.sort((a, b) => {
-    const da = getDepth(a), db = getDepth(b);
-    if (da !== db) return da - db;
-    return a.name.localeCompare(b.name);
+function setupThemeToggle() {
+  const button = document.getElementById("themeToggle");
+  updateThemeButton();
+  button.addEventListener("click", () => {
+    document.body.classList.toggle("dark");
+    updateThemeButton();
   });
+}
 
-  const ordered = [];
-  function addWithChildren(parentId) {
-    for (const s of allScopes) {
-      if ((s.parentId || null) === parentId) { ordered.push(s); addWithChildren(s.id); }
+function updateThemeButton() {
+  const button = document.getElementById("themeToggle");
+  button.textContent = document.body.classList.contains("dark") ? "☀ Light" : "◐ Dark";
+}
+
+function setupResizers() {
+  setupResizer("resizerLeft", "sidebar", "left");
+  setupResizer("resizerRight", "detailPanel", "right");
+}
+
+function setupResizer(resizerId, panelId, direction) {
+  const resizer = document.getElementById(resizerId);
+  const panel = document.getElementById(panelId);
+  if (!resizer || !panel) return;
+
+  let startX = 0;
+  let startWidth = 0;
+
+  resizer.addEventListener("mousedown", (event) => {
+    startX = event.clientX;
+    startWidth = panel.getBoundingClientRect().width;
+    resizer.classList.add("active");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    function onMove(moveEvent) {
+      const delta = direction === "left" ? moveEvent.clientX - startX : startX - moveEvent.clientX;
+      const nextWidth = Math.max(180, Math.min(600, startWidth + delta));
+      panel.style.width = `${nextWidth}px`;
+      panel.style.flexShrink = "0";
     }
-  }
-  addWithChildren(null);
 
-  listEl.innerHTML = ordered.map(scope => {
-    const depth = getDepth(scope);
-    const indentPx = depth > 0 ? ` style="padding-left:${depth * 28}px"` : "";
-    const icon = scope.id === "global" ? "🌐" : (SCOPE_ICONS[scope.type] || "📂");
-    const curClass = scope.isCurrent ? " cur" : "";
-    const curLabel = scope.isCurrent ? ' <span style="font-size:0.6rem;color:var(--text-faint);margin-left:4px;">(current)</span>' : "";
-    return `<div class="dest${curClass}" data-scope-id="${esc(scope.id)}"${indentPx}>
-      <span class="di">${icon}</span>
-      <span class="dn">${esc(scope.name)}${curLabel}</span>
-      <span class="dp">${esc(scope.tag)}</span>
+    function onUp() {
+      resizer.classList.remove("active");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    }
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+}
+
+function renderAll() {
+  normalizeState();
+  renderSidebar();
+  renderContentHeader();
+  renderPills();
+  renderMainContent();
+  updateBulkBar();
+
+  const needsPreview = selectedItem && itemKey(selectedItem) !== detailPreviewKey;
+  renderDetailPanel(needsPreview);
+
+  if (needsPreview) {
+    loadPreview(selectedItem);
+  }
+
+  initSortable();
+
+  const loading = document.getElementById("loading");
+  loading.classList.toggle("hidden", Boolean(data));
+  document.getElementById("app").classList.toggle("select-mode", selectMode);
+}
+
+function renderSidebar() {
+  const tree = document.getElementById("sidebarTree");
+  const rootScopes = getRootScopes().filter((scope) => scopeVisibleInSidebar(scope));
+
+  if (rootScopes.length === 0) {
+    tree.innerHTML = `<div class="empty-state">No scopes match the current search.</div>`;
+    return;
+  }
+
+  tree.innerHTML = rootScopes.map((scope) => renderSidebarScope(scope)).join("");
+}
+
+function renderSidebarScope(scope) {
+  const childHtml = getChildScopes(scope.id)
+    .filter((child) => scopeVisibleInSidebar(child))
+    .map((child) => renderSidebarScope(child))
+    .join("");
+
+  const categoryRows = getSidebarCategoryCounts(scope.id)
+    .map(({ category, count }) => {
+      const config = CATEGORIES[category] || { icon: "📄", label: capitalize(category) };
+      return `
+        <div class="s-cat" data-scope-id="${esc(scope.id)}" data-cat="${esc(category)}">
+          <span class="s-cat-ico">${config.icon}</span>
+          <span class="s-cat-nm">${esc(config.label)}</span>
+          <span class="s-cat-cnt">${count}</span>
+        </div>`;
+    })
+    .join("");
+
+  const hasNestedContent = Boolean(categoryRows || childHtml);
+  const isExpanded = hasNestedContent && (searchQuery ? true : uiState.expandedScopes.has(scope.id));
+  const icon = SCOPE_ICONS[scope.type] || "📂";
+
+  return `
+    <div class="s-scope scope-block" data-scope-id="${esc(scope.id)}">
+      <div class="s-scope-hdr${scope.id === selectedScopeId ? " active" : ""}" data-scope-id="${esc(scope.id)}">
+        <span class="s-tog${hasNestedContent ? (isExpanded ? "" : " collapsed") : " empty"}">▾</span>
+        <span class="s-ico">${icon}</span>
+        <span class="s-nm">${esc(scope.name)}</span>
+        <span class="s-cnt">${getRecursiveScopeCount(scope.id)}</span>
+      </div>
+      ${hasNestedContent ? `
+        <div class="s-scope-body${isExpanded ? "" : " collapsed"}">
+          ${categoryRows ? `<div>${categoryRows}</div>` : ""}
+          ${childHtml ? `<div class="s-children">${childHtml}</div>` : ""}
+        </div>` : ""}
     </div>`;
+}
+
+function renderContentHeader() {
+  const scope = getScopeById(selectedScopeId);
+  const title = document.getElementById("contentTitle");
+  const tag = document.getElementById("contentScopeTag");
+  const inherit = document.getElementById("contentInherit");
+
+  if (!scope) {
+    title.textContent = "Organizer";
+    tag.textContent = "global";
+    inherit.innerHTML = "";
+    inherit.style.display = "none";
+    return;
+  }
+
+  title.textContent = scope.name;
+  tag.textContent = scope.type;
+
+  const chain = getScopeChain(scope);
+  if (chain.length === 0) {
+    inherit.innerHTML = "";
+    inherit.style.display = "none";
+    return;
+  }
+
+  inherit.style.display = "";
+  inherit.innerHTML = `
+    <span class="c-inherit-label">inherits from</span>
+    ${chain.map((entry, index) => {
+      const icon = SCOPE_ICONS[entry.type] || "📂";
+      const sep = index === chain.length - 1 ? "" : `<span class="c-inherit-sep">›</span>`;
+      return `<span class="c-inherit-pill">${icon} ${esc(entry.name)}</span>${sep}`;
+    }).join("")}`;
+}
+
+function renderPills() {
+  const container = document.getElementById("pills");
+  // Count items for the currently selected scope (not global counts)
+  const scopeItems = selectedScopeId
+    ? (data?.items || []).filter((i) => i.scopeId === selectedScopeId)
+    : data?.items || [];
+  const scopeCounts = {};
+  let scopeTotal = 0;
+  for (const item of scopeItems) {
+    scopeCounts[item.category] = (scopeCounts[item.category] || 0) + 1;
+    scopeTotal++;
+  }
+  const pills = [
+    { key: "all", label: "All", icon: "◌", count: scopeTotal },
+    ...CATEGORY_ORDER.map((category) => {
+      const config = CATEGORIES[category] || { icon: "📄", filterLabel: capitalize(category) };
+      return {
+        key: category,
+        label: config.filterLabel,
+        icon: config.icon,
+        count: scopeCounts[category] || 0,
+      };
+    }),
+  ];
+
+  const allActive = activeFilters.size === 0;
+
+  container.innerHTML = `
+    ${pills.map((pill) => {
+      const isActive = pill.key === "all" ? allActive : activeFilters.has(pill.key);
+      return `
+        <button type="button" class="f-pill${isActive ? " active" : ""}" data-filter="${pill.key}">
+          <span class="f-pill-ico">${pill.icon}</span>
+          ${esc(pill.label)}
+          <b>${pill.count}</b>
+        </button>`;
+    }).join("")}
+    <button type="button" class="select-btn${selectMode ? " active" : ""}" id="selectBtn">☐ Select</button>`;
+}
+
+function renderMainContent() {
+  const itemList = document.getElementById("itemList");
+  const scope = getScopeById(selectedScopeId);
+
+  if (!scope) {
+    itemList.innerHTML = `<div class="empty-state empty-centered">Select a scope to inspect its contents.</div>`;
+    return;
+  }
+
+  const items = getVisibleItemsForScope(scope.id);
+  const categories = CATEGORY_ORDER
+    .map((category) => ({
+      category,
+      items: sortCategoryItems(category, items.filter((item) => item.category === category)),
+    }))
+    .filter((entry) => entry.items.length > 0);
+
+  if (categories.length === 0) {
+    const message = searchQuery
+      ? "No items match the current search in this scope."
+      : activeFilters.size > 0
+        ? "No items match the current filters in this scope."
+        : "No items found in this scope.";
+    itemList.innerHTML = `<div class="empty-state empty-centered">${message}</div>`;
+    return;
+  }
+
+  itemList.innerHTML = categories.map(({ category, items: catItems }) => {
+    const config = CATEGORIES[category] || { icon: "📄", label: capitalize(category), group: null };
+    const catKey = `${scope.id}::${category}`;
+    const collapsed = searchQuery ? false : uiState.collapsedCats.has(catKey);
+
+    return `
+      <div class="cat-section" data-cat-section="${esc(category)}">
+        <div class="cat-hdr" data-cat="${esc(category)}">
+          <span class="cat-hdr-tog${collapsed ? " collapsed" : ""}">▾</span>
+          <span class="cat-hdr-ico">${config.icon}</span>
+          <span class="cat-hdr-nm">${esc(config.label)}</span>
+          <span class="cat-hdr-cnt">${pluralize(catItems.length, "item")}</span>
+          <span class="cat-hdr-sort">
+            <button type="button" class="sort-btn${(uiState.sortBy[`${scope.id}::${category}`]?.field === "size") ? " active" : ""}" data-cat="${esc(category)}" data-sort="size">Size ${sortArrow(`${scope.id}::${category}`, "size")}</button>
+            <button type="button" class="sort-btn${(uiState.sortBy[`${scope.id}::${category}`]?.field === "date") ? " active" : ""}" data-cat="${esc(category)}" data-sort="date">Date ${sortArrow(`${scope.id}::${category}`, "date")}</button>
+          </span>
+        </div>
+        <div class="cat-body${collapsed ? " collapsed" : ""}">
+          ${category === "skill"
+            ? renderSkillCategory(scope.id, config.group, catItems)
+            : `
+              <div class="sortable-zone" data-scope="${esc(scope.id)}" data-group="${config.group || "none"}">
+                ${catItems.map((item) => renderItem(item)).join("")}
+              </div>`}
+        </div>
+      </div>`;
   }).join("");
 
+  updateSelectedItemHighlight();
+}
+
+function renderSkillCategory(scopeId, group, items) {
+  const bundles = new Map();
+  const unbundled = [];
+
+  for (const item of items) {
+    if (item.bundle) {
+      if (!bundles.has(item.bundle)) bundles.set(item.bundle, []);
+      bundles.get(item.bundle).push(item);
+    } else {
+      unbundled.push(item);
+    }
+  }
+
+  let html = "";
+
+  for (const [bundle, bundleItems] of bundles.entries()) {
+    const bundleKey = `${scopeId}::${bundle}`;
+    const collapsed = searchQuery ? false : !uiState.collapsedBundles.has(bundleKey);
+    const bundleName = bundle.split("/").pop() || bundle;
+    html += `
+      <div class="bundle-group">
+        <div class="bundle-row" data-bundle="${esc(bundle)}">
+          <span class="bundle-row-ico">📦</span>
+          <span class="bundle-row-nm">${esc(bundleName)}</span>
+          <span class="bundle-row-src">${esc(bundle)}</span>
+          <span class="bundle-row-cnt">${pluralize(bundleItems.length, "skill")}</span>
+        </div>
+        <div class="bundle-children${collapsed ? " collapsed" : ""}">
+          <div class="sortable-zone" data-scope="${esc(scopeId)}" data-group="${group || "none"}">
+            ${bundleItems.map((item) => renderItem(item)).join("")}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  if (unbundled.length > 0) {
+    html += `
+      <div class="sortable-zone" data-scope="${esc(scopeId)}" data-group="${group || "none"}">
+        ${unbundled.map((item) => renderItem(item)).join("")}
+      </div>`;
+  }
+
+  return html;
+}
+
+function renderItem(item) {
+  const icon = ITEM_ICONS[item.category] || "📄";
+  const key = itemKey(item);
+  const isSelected = selectedItem && itemKey(selectedItem) === key;
+  const checked = bulkSelected.has(key) ? " checked" : "";
+  const badgeHtml = shouldShowItemBadge(item) ? renderBadge(item) : "";
+  const checkbox = item.locked ? "" : `<input type="checkbox" class="item-chk" data-item-key="${esc(key)}"${checked}>`;
+  const dateLabel = formatShortDate(item.mtime || item.ctime);
+  const sizeLabel = item.size || "—";
+  const desc = item.description || item.fileName || item.path || "No description";
+
+  const actions = item.locked ? "" : `
+    <span class="item-actions">
+      ${(canMoveItem(item) || item.locked) ? `<button type="button" class="act-btn act-move" data-action="move">Move</button>` : ""}
+      <button type="button" class="act-btn act-open" data-action="open">Open</button>
+      ${canDeleteItem(item) ? `<button type="button" class="act-btn act-del" data-action="delete">Del</button>` : ""}
+    </span>`;
+
+  return `
+    <div class="item${item.locked ? " locked" : ""}${isSelected ? " selected" : ""}" data-item-key="${esc(key)}" data-path="${esc(item.path)}">
+      ${checkbox}
+      <span class="item-ico">${icon}</span>
+      <span class="item-name">${esc(item.name)}</span>
+      ${badgeHtml}
+      <span class="item-desc">${esc(desc)}</span>
+      <div class="item-right">
+        <span class="item-size">${esc(sizeLabel)}</span>
+        <span class="item-date">${esc(dateLabel)}</span>
+      </div>
+      ${actions}
+    </div>`;
+}
+
+function renderDetailPanel(resetPreview = false) {
+  const title = document.getElementById("detailTitle");
+  const crumb = document.getElementById("detailCrumb");
+  const type = document.getElementById("detailType");
+  const desc = document.getElementById("detailDesc");
+  const size = document.getElementById("detailSize");
+  const dates = document.getElementById("detailDates");
+  const path = document.getElementById("detailPath");
+  const preview = document.getElementById("previewContent");
+  const openBtn = document.getElementById("detailOpen");
+  const moveBtn = document.getElementById("detailMove");
+  const deleteBtn = document.getElementById("detailDelete");
+
+  if (!selectedItem) {
+    title.textContent = "Select an item";
+    crumb.innerHTML = `<span class="crumb-pill">No item selected</span>`;
+    type.textContent = "—";
+    desc.textContent = "Select an item to inspect its metadata and preview.";
+    size.textContent = "—";
+    dates.innerHTML = `
+      <div class="d-value d-date-line">Created: <b>—</b></div>
+      <div class="d-value d-date-line">Modified: <b>—</b></div>`;
+    path.textContent = "—";
+    preview.textContent = "Select an item to preview";
+    openBtn.disabled = true;
+    moveBtn.disabled = true;
+    deleteBtn.disabled = true;
+    detailPreviewKey = null;
+    return;
+  }
+
+  const scope = getScopeById(selectedItem.scopeId);
+  title.textContent = selectedItem.name;
+  crumb.innerHTML = renderBreadcrumb(scope);
+  type.innerHTML = renderBadge(selectedItem, true);
+  desc.textContent = selectedItem.description || "—";
+  size.textContent = selectedItem.size || "—";
+  dates.innerHTML = `
+    <div class="d-value d-date-line">Created: <b>${esc(selectedItem.ctime || "—")}</b></div>
+    <div class="d-value d-date-line">Modified: <b>${esc(selectedItem.mtime || "—")}</b></div>`;
+  path.textContent = selectedItem.path || "—";
+
+  openBtn.disabled = false;
+  moveBtn.disabled = false; // always enabled — locked items use CC prompt instead of API
+  deleteBtn.disabled = !canDeleteItem(selectedItem);
+
+  // CC Actions — contextual prompt buttons
+  renderCcActions(selectedItem);
+
+  if (resetPreview) {
+    preview.textContent = "Loading...";
+    detailPreviewKey = itemKey(selectedItem);
+  }
+}
+
+function renderCcActions(item) {
+  const container = document.getElementById("detailCcActions");
+  const btnRow = document.getElementById("ccBtnRow");
+  const buttons = [];
+
+  const explainPrompt = `I have a Claude Code ${item.category} called "${item.name}" at:\n${item.path}\n\nPlease read this file and explain:\n1. What does this ${item.category} do?\n2. When does it get loaded / triggered?\n3. What would break if I removed or changed it?\n4. Are there any other files that depend on it?`;
+
+  // Info line for unlocked items
+  if (!item.locked && item.category !== "session") {
+    buttons.push({ ico: "🤖", label: "", prompt: null, info: "Use these prompts for guided changes — Claude Code will read the file, explain the impact, and confirm before making changes." });
+  }
+
+  switch (item.category) {
+    case "session": {
+      const sessionId = (item.fileName || "").replace(".jsonl", "");
+      if (sessionId) {
+        buttons.push({ ico: "💡", label: "", prompt: null, info: "Sessions can be resumed directly in Claude Code. Copy the command below and paste it in a new terminal to continue where you left off." });
+        buttons.push({ ico: "💬", label: "Resume Session", prompt: `claude --resume ${sessionId}\n\n# Session file: ${item.path}` });
+        buttons.push({ ico: "📋", label: "Summarize", prompt: `I have a Claude Code session at:\n${item.path}\n\nPlease read this session file and give me a summary:\n1. What was this session about?\n2. What was accomplished?\n3. Were there any unfinished tasks or pending actions?\n4. What files were modified?` });
+      }
+      break;
+    }
+    case "memory":
+      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
+      buttons.push({ ico: "✏️", label: "Edit Content", prompt: `I want to edit this Claude Code memory: "${item.name}"\nPath: ${item.path}\nType: ${item.subType || "memory"}\n\nBefore editing:\n1. Read the current content\n2. Show me the current frontmatter (name, description, type) and body\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Only save after I confirm` });
+      break;
+    case "skill":
+      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
+      buttons.push({ ico: "✏️", label: "Edit Skill", prompt: `I want to edit this Claude Code skill: "${item.name}"\nPath: ${item.path}\n\nBefore editing:\n1. Read the SKILL.md content\n2. Explain what this skill does and when it triggers\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Warn if the change could affect how Claude Code invokes it\n6. Only save after I confirm` });
+      break;
+    case "mcp":
+      buttons.push({ ico: "📋", label: "Explain This", prompt: `I have a Claude Code MCP server called "${item.name}" at:\n${item.path}\n\nPlease explain:\n1. What does this MCP server do?\n2. What tools does it provide?\n3. How is it configured (command, args, env)?\n4. Is it currently working? Check if the command exists on this system.` });
+      buttons.push({ ico: "🔧", label: "Edit Config", prompt: `I want to modify this MCP server configuration: "${item.name}"\nPath: ${item.path}\n\nBefore changing:\n1. Read the current MCP config\n2. Show me the current command, args, and env settings\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Warn if this could break any tools that depend on this MCP server\n6. Only save after I confirm` });
+      break;
+    case "plan":
+      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
+      buttons.push({ ico: "▶️", label: "Continue Plan", prompt: `I have an existing Claude Code plan at:\n${item.path}\n\nPlease read this plan and:\n1. Summarize what the plan is about\n2. Show which steps are done and which are remaining\n3. Ask me if I want to continue from where it left off` });
+      break;
+    case "config":
+      buttons.push({ ico: "💡", label: "", prompt: null, info: "Config files are managed by Claude Code. Use these prompts to ask Claude Code to help you understand or modify them." });
+      buttons.push({ ico: "📋", label: "Explain This", prompt: `I have a Claude Code config file: "${item.name}"\nPath: ${item.path}\n\nPlease read it and explain:\n1. What does each setting do?\n2. Which settings are most important?\n3. Are there any settings that look unusual or could cause issues?` });
+      buttons.push({ ico: "✏️", label: "Modify", prompt: `I want to modify this Claude Code config: "${item.name}"\nPath: ${item.path}\n\nBefore making any changes:\n1. Read the current content\n2. Explain what each setting does\n3. Ask me what I want to change\n4. Show exactly what will change (before vs after)\n5. Warn if the change could break anything\n6. Only apply after I confirm` });
+      buttons.push({ ico: "🗑️", label: "Remove", prompt: `I want to remove this Claude Code config file: "${item.name}"\nPath: ${item.path}\n\n⚠️ This is a config file — removing it can significantly change how Claude Code behaves in this project.\n\nBefore doing ANYTHING:\n1. Read the entire file and explain what it is — is this CLAUDE.md (project instructions), settings.json (project settings), or settings.local.json (local overrides)?\n2. Explain in plain language what EVERY setting/instruction in this file does\n3. Explain exactly what will change after removal:\n   - If CLAUDE.md: all project-specific instructions, coding conventions, and custom rules will be lost. Claude Code will behave generically.\n   - If settings.json: project-level permission overrides, model preferences, and tool settings will revert to defaults.\n   - If settings.local.json: local environment overrides (API keys, personal preferences) will be lost.\n4. List everything that depends on or references this file\n5. Ask me: "Are you sure you want to remove this? Here is what you will lose: [list]. Type YES to confirm."\n6. Only remove after I type YES — do not proceed on any other response` });
+      break;
+    case "hook":
+      buttons.push({ ico: "💡", label: "", prompt: null, info: "Hooks run automatically on Claude Code events. Use these prompts to understand or modify them safely." });
+      buttons.push({ ico: "📋", label: "Explain This", prompt: `I have a Claude Code hook: "${item.name}"\nPath: ${item.path}\n\nPlease explain:\n1. What event triggers this hook?\n2. What does the hook script do?\n3. What would happen if I disabled or removed it?\n4. Is the hook script working correctly? Check if the script exists and is executable.` });
+      buttons.push({ ico: "✏️", label: "Modify", prompt: `I want to modify this Claude Code hook: "${item.name}"\nPath: ${item.path}\n\nBefore changing:\n1. Read the hook config and the script it runs\n2. Explain when it triggers and what it does\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Warn about any side effects (e.g. breaking pre-commit checks)\n6. Only apply after I confirm` });
+      buttons.push({ ico: "🗑️", label: "Remove", prompt: `I want to remove this Claude Code hook: "${item.name}"\nPath: ${item.path}\n\nBefore removing:\n1. Read the hook and explain what it does\n2. Tell me what behavior will stop after removal\n3. Check if other hooks or configs depend on it\n4. Only remove after I explicitly confirm` });
+      break;
+    case "plugin":
+      buttons.push({ ico: "💡", label: "", prompt: null, info: "Plugins extend Claude Code's capabilities. Use these prompts to understand or manage them." });
+      buttons.push({ ico: "📋", label: "Explain This", prompt: `I have a Claude Code plugin: "${item.name}"\nPath: ${item.path}\n\nPlease explain:\n1. What does this plugin do?\n2. What features or commands does it add?\n3. Is it actively loaded by Claude Code?\n4. What would change if I removed it?` });
+      buttons.push({ ico: "🗑️", label: "Remove", prompt: `I want to remove this Claude Code plugin: "${item.name}"\nPath: ${item.path}\n\nBefore removing:\n1. Explain what features this plugin provides\n2. Check if any skills, hooks, or configs reference it\n3. Tell me what will stop working after removal\n4. Only remove after I explicitly confirm` });
+      break;
+    default:
+      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
+      break;
+  }
+
+  if (buttons.length === 0) {
+    container.classList.add("hidden");
+    return;
+  }
+
+  container.classList.remove("hidden");
+  btnRow.innerHTML = buttons.map((btn) => {
+    if (btn.info) {
+      return `<div class="cc-info"><span class="cc-ico">${btn.ico}</span>${esc(btn.info)}</div>`;
+    }
+    return `<button type="button" class="cc-btn" data-prompt="${esc(btn.prompt)}"><span class="cc-ico">${btn.ico}</span>${esc(btn.label)}</button>`;
+  }).join("");
+}
+
+function setupCcActions() {
+  document.getElementById("detailCcActions").addEventListener("click", (event) => {
+    const btn = event.target.closest(".cc-btn");
+    if (!btn) return;
+    const prompt = btn.dataset.prompt;
+    navigator.clipboard.writeText(prompt).then(() => {
+      const orig = btn.innerHTML;
+      const isResume = prompt.startsWith("claude --resume");
+      const msg = isResume ? "Copied! Paste in a new terminal" : "Copied! Paste to Claude Code";
+      btn.innerHTML = `<span class="cc-ico">✅</span>${msg}`;
+      setTimeout(() => { btn.innerHTML = orig; }, 2500);
+    });
+  });
+}
+
+function renderBreadcrumb(scope) {
+  if (!scope) return `<span class="crumb-pill">Unknown scope</span>`;
+  const scopes = [...getScopeChain(scope), scope];
+  return scopes.map((entry, index) => {
+    const icon = SCOPE_ICONS[entry.type] || "📂";
+    const sep = index === scopes.length - 1 ? "" : `<span class="crumb-sep">›</span>`;
+    return `<span class="crumb-pill">${icon} ${esc(entry.name)}</span>${sep}`;
+  }).join("");
+}
+
+function shouldShowItemBadge(item) {
+  if (item.category === "memory") return true;
+  if (item.subType && item.subType !== item.category) return true;
+  return ["mcp", "config", "hook", "plugin", "plan"].includes(item.category);
+}
+
+function renderBadge(item, detail = false) {
+  const label = item.subType || item.category;
+  const cls = BADGE_CLASS[label] || BADGE_CLASS[item.category] || "ib-session";
+  const style = detail ? ' style="font-size:0.68rem"' : "";
+  return `<span class="item-badge ${cls}"${style}>${esc(label)}</span>`;
+}
+
+function initSortable() {
+  if (!window.Sortable) return;
+
+  const scrollEl = document.getElementById("mainContent");
+
+  document.querySelectorAll(".sortable-zone").forEach((el) => {
+    const group = el.dataset.group;
+    if (!group || group === "none") return;
+
+    Sortable.create(el, {
+      group,
+      animation: 150,
+      ghostClass: "sortable-ghost",
+      chosenClass: "sortable-chosen",
+      draggable: ".item:not(.locked)",
+      filter: ".act-btn, .item-chk",
+      preventOnFilter: false,
+      fallbackOnBody: true,
+      scroll: scrollEl,
+      scrollSensitivity: 100,
+      scrollSpeed: 15,
+      bubbleScroll: true,
+      onStart(evt) {
+        draggingItem = getItemByKey(evt.item.dataset.itemKey);
+      },
+      onEnd(evt) {
+        draggingItem = null;
+        clearScopeHighlights();
+
+        if (evt.from === evt.to) return;
+
+        const itemEl = evt.item;
+        const item = getItemByKey(itemEl.dataset.itemKey);
+        if (!item) {
+          renderMainContent();
+          initSortable();
+          return;
+        }
+
+        const oldParent = evt.from;
+        const oldIndex = evt.oldIndex ?? 0;
+        const revertFn = () => {
+          const children = oldParent.children;
+          if (oldIndex >= children.length) oldParent.appendChild(itemEl);
+          else oldParent.insertBefore(itemEl, children[oldIndex]);
+        };
+
+        const fromScopeId = evt.from.dataset.scope;
+        const toScopeId = evt.to.dataset.scope;
+
+        if (!fromScopeId || !toScopeId || fromScopeId === toScopeId) {
+          revertFn();
+          return;
+        }
+
+        pendingDrag = { item, fromScopeId, toScopeId, revertFn };
+        showDragConfirm(item, getScopeById(fromScopeId), getScopeById(toScopeId));
+      },
+    });
+  });
+}
+
+function setupScopeDropZones() {
+  document.addEventListener("dragover", (event) => {
+    if (!draggingItem) return;
+
+    const scopeBlock = event.target.closest(".scope-block");
+    clearScopeHighlights();
+
+    if (!scopeBlock) return;
+
+    const scopeId = scopeBlock.dataset.scopeId;
+    if (!scopeId || scopeId === draggingItem.scopeId) return;
+
+    event.preventDefault();
+    scopeBlock.classList.add("drop-target");
+  }, true);
+
+  document.addEventListener("drop", (event) => {
+    if (!draggingItem) return;
+
+    const scopeBlock = event.target.closest(".scope-block");
+    clearScopeHighlights();
+
+    if (!scopeBlock) return;
+    if (event.target.closest(".sortable-zone")) return;
+
+    const scopeId = scopeBlock.dataset.scopeId;
+    if (!scopeId || scopeId === draggingItem.scopeId) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const item = draggingItem;
+
+    if (item.locked) {
+      // Locked item — generate CC prompt
+      const destScope = getScopeById(scopeId);
+      const fromScope = getScopeById(item.scopeId);
+      const prompt = `I want to move this Claude Code ${item.category} to a different scope.\n\nItem: "${item.name}"\nCurrent path: ${item.path}\nFrom scope: ${fromScope?.name || item.scopeId}\nMove to scope: ${destScope?.name || scopeId}\n\nBefore moving:\n1. Read the file and understand what it does\n2. Determine the correct destination path for the "${destScope?.name || scopeId}" scope\n3. Check if a ${item.category} with the same name already exists at the destination\n4. Explain what will change — which projects will gain or lose access to this ${item.category}\n5. Warn me about any potential conflicts or breaking changes\n6. Only move the file after I confirm`;
+      navigator.clipboard.writeText(prompt).then(() => {
+        toast("Move prompt copied! Paste to Claude Code in your terminal.");
+      });
+      draggingItem = null;
+      return;
+    }
+
+    pendingDrag = {
+      item,
+      fromScopeId: item.scopeId,
+      toScopeId: scopeId,
+      revertFn: () => {},
+    };
+
+    showDragConfirm(item, getScopeById(item.scopeId), getScopeById(scopeId));
+    draggingItem = null;
+  }, true);
+
+  document.addEventListener("dragend", () => {
+    draggingItem = null;
+    clearScopeHighlights();
+  }, true);
+}
+
+function clearScopeHighlights() {
+  document.querySelectorAll(".scope-block.drop-target").forEach((el) => {
+    el.classList.remove("drop-target");
+  });
+}
+
+function showDetail(item) {
+  const next = getItemByKey(itemKey(item)) || item;
+  const shouldLoadPreview = itemKey(next) !== detailPreviewKey;
+  selectedItem = next;
+  renderDetailPanel(shouldLoadPreview);
+  updateSelectedItemHighlight();
+  if (shouldLoadPreview) {
+    loadPreview(next);
+  }
+}
+
+function updateSelectedItemHighlight() {
+  const selectedKey = selectedItem ? itemKey(selectedItem) : null;
+  document.querySelectorAll(".item.selected").forEach((row) => {
+    row.classList.remove("selected");
+  });
+  if (!selectedKey) return;
+  const row = document.querySelector(`.item[data-item-key="${cssEscape(selectedKey)}"]`);
+  row?.classList.add("selected");
+}
+
+async function loadPreview(item) {
+  const preview = document.getElementById("previewContent");
+  const currentKey = itemKey(item);
+
+  try {
+    if (item.category === "mcp") {
+      if (currentKey !== detailPreviewKey) return;
+      preview.textContent = JSON.stringify(item.mcpConfig || {}, null, 2);
+      return;
+    }
+
+    if (item.category === "hook") {
+      const res = await fetchJson(`/api/file-content?path=${encodeURIComponent(item.path)}`);
+      if (currentKey !== detailPreviewKey) return;
+      if (res.ok) {
+        const settings = JSON.parse(res.content);
+        const hookConfig = settings.hooks?.[item.name];
+        preview.textContent = hookConfig ? JSON.stringify(hookConfig, null, 2) : (item.description || "(no content)");
+      } else {
+        preview.textContent = item.description || "(no content)";
+      }
+      return;
+    }
+
+    if (item.category === "plugin") {
+      if (currentKey !== detailPreviewKey) return;
+      preview.textContent = `Plugin directory: ${item.path}`;
+      return;
+    }
+
+    if (item.category === "session") {
+      const res = await fetchJson(`/api/session-preview?path=${encodeURIComponent(item.path)}`);
+      if (currentKey !== detailPreviewKey) return;
+      preview.textContent = res.ok ? res.content : "Cannot load session preview";
+      requestAnimationFrame(() => {
+        preview.scrollTop = preview.scrollHeight;
+      });
+      return;
+    }
+
+    let filePath = item.path;
+    if (item.category === "skill") filePath = `${item.path}/SKILL.md`;
+
+    const res = await fetchJson(`/api/file-content?path=${encodeURIComponent(filePath)}`);
+    if (currentKey !== detailPreviewKey) return;
+    preview.textContent = res.ok ? res.content : (res.error || "Cannot load preview");
+  } catch {
+    if (currentKey !== detailPreviewKey) return;
+    preview.textContent = "Failed to load preview";
+  }
+}
+
+function closeDetail() {
+  selectedItem = null;
+  detailPreviewKey = null;
+  renderDetailPanel();
+  updateSelectedItemHighlight();
+}
+
+function showDragConfirm(item, fromScope, toScope) {
+  const fromIcon = SCOPE_ICONS[fromScope?.type] || "📂";
+  const toIcon = SCOPE_ICONS[toScope?.type] || "📂";
+
+  document.getElementById("dcPreview").innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <span style="font-size:1.1rem;">${ITEM_ICONS[item.category] || "📄"}</span>
+      <div>
+        <div style="font-weight:900;color:var(--text-primary);font-size:0.9rem;">${esc(item.name)}</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px;">
+          ${renderBadge(item)}
+          <span style="font-size:0.72rem;color:var(--text-muted);">${esc(item.category)}</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding-top:10px;border-top:1px solid var(--border-light);">
+      <div style="flex:1;text-align:center;">
+        <div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">From</div>
+        <div style="font-size:0.82rem;font-weight:700;color:var(--danger);">${fromIcon} ${esc(fromScope?.name || "?")}</div>
+        <div style="font-size:0.62rem;color:var(--text-faint);">${esc(fromScope?.type || "")}</div>
+      </div>
+      <div style="font-size:1.2rem;color:var(--text-faint);">→</div>
+      <div style="flex:1;text-align:center;">
+        <div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">To</div>
+        <div style="font-size:0.82rem;font-weight:700;color:var(--accent);">${toIcon} ${esc(toScope?.name || "?")}</div>
+        <div style="font-size:0.62rem;color:var(--text-faint);">${esc(toScope?.type || "")}</div>
+      </div>
+    </div>`;
+
+  document.getElementById("dragConfirmModal").classList.remove("hidden");
+}
+
+function openDeleteModal(item) {
+  pendingDelete = item;
+  const scope = getScopeById(item.scopeId);
+
+  document.getElementById("deletePreview").innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <span style="font-size:1.1rem;">${ITEM_ICONS[item.category] || "📄"}</span>
+      <div>
+        <div style="font-weight:900;color:var(--text-primary);font-size:0.9rem;">${esc(item.name)}</div>
+        <div style="font-size:0.68rem;color:var(--text-muted);margin-top:2px;">${esc(scope?.name || item.scopeId)} · ${esc(item.category)}</div>
+      </div>
+    </div>
+    <div style="font-size:0.68rem;color:var(--danger);margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);">
+      ${item.category === "skill" ? "This will delete the entire skill folder and all its files." : "This will permanently delete the item from disk."}
+    </div>`;
+
+  document.getElementById("deleteModal").classList.remove("hidden");
+}
+
+function setupModals() {
+  document.getElementById("dcCancel").addEventListener("click", () => {
+    document.getElementById("dragConfirmModal").classList.add("hidden");
+    if (pendingDrag?.revertFn) pendingDrag.revertFn();
+    pendingDrag = null;
+  });
+
+  document.getElementById("dcConfirm").addEventListener("click", async () => {
+    document.getElementById("dragConfirmModal").classList.add("hidden");
+    if (!pendingDrag) return;
+    const result = await doMove(pendingDrag.item, pendingDrag.toScopeId);
+    if (!result.ok && pendingDrag.revertFn) pendingDrag.revertFn();
+    pendingDrag = null;
+  });
+
+  document.getElementById("moveCancel").addEventListener("click", closeMoveModal);
+  document.getElementById("moveModal").addEventListener("click", (event) => {
+    if (event.target === document.getElementById("moveModal")) closeMoveModal();
+  });
+
+  document.getElementById("dragConfirmModal").addEventListener("click", (event) => {
+    if (event.target !== document.getElementById("dragConfirmModal")) return;
+    document.getElementById("dragConfirmModal").classList.add("hidden");
+    if (pendingDrag?.revertFn) pendingDrag.revertFn();
+    pendingDrag = null;
+  });
+
+  document.getElementById("deleteCancel").addEventListener("click", () => {
+    document.getElementById("deleteModal").classList.add("hidden");
+    pendingDelete = null;
+  });
+
+  document.getElementById("deleteConfirm").addEventListener("click", async () => {
+    document.getElementById("deleteModal").classList.add("hidden");
+    if (pendingDelete) {
+      await doDelete(pendingDelete);
+      pendingDelete = null;
+    }
+  });
+
+  document.getElementById("deleteModal").addEventListener("click", (event) => {
+    if (event.target !== document.getElementById("deleteModal")) return;
+    document.getElementById("deleteModal").classList.add("hidden");
+    pendingDelete = null;
+  });
+}
+
+async function openMoveModal(item) {
+  const res = await fetchJson(`/api/destinations?path=${encodeURIComponent(item.path)}&category=${encodeURIComponent(item.category)}&name=${encodeURIComponent(item.name)}`);
+  if (!res.ok) {
+    toast(res.error, true);
+    return;
+  }
+
+  const listEl = document.getElementById("moveDestList");
+  const ordered = buildOrderedScopeEntries(res.destinations, res.currentScopeId);
   let selectedDest = null;
-  listEl.querySelectorAll(".dest").forEach(d => {
-    d.addEventListener("click", () => {
-      listEl.querySelectorAll(".dest").forEach(x => x.classList.remove("sel"));
-      d.classList.add("sel");
-      selectedDest = d.dataset.scopeId;
+
+  listEl.innerHTML = ordered.map(renderDestinationRow).join("");
+
+  listEl.querySelectorAll(".dest").forEach((entry) => {
+    if (entry.classList.contains("cur")) return;
+    entry.addEventListener("click", () => {
+      listEl.querySelectorAll(".dest").forEach((node) => node.classList.remove("sel"));
+      entry.classList.add("sel");
+      selectedDest = entry.dataset.scopeId;
       document.getElementById("moveConfirm").disabled = false;
     });
   });
@@ -646,12 +1156,59 @@ async function openBulkMoveModal(items) {
   document.getElementById("moveConfirm").onclick = async () => {
     if (!selectedDest) return;
     closeMoveModal();
-    let ok = 0, fail = 0;
+    if (item.locked) {
+      // Locked item — generate CC prompt instead of API call
+      const destScope = getScopeById(selectedDest);
+      const destName = destScope?.name || selectedDest;
+      const prompt = `I want to move this Claude Code ${item.category} to a different scope.\n\nItem: "${item.name}"\nCurrent path: ${item.path}\nMove to scope: ${destName}\n\nBefore moving:\n1. Read the file and understand what it does\n2. Determine the correct destination path for the "${destName}" scope\n3. Check if a ${item.category} with the same name already exists at the destination\n4. Explain what will change — which projects will gain or lose access to this ${item.category}\n5. Warn me about any potential conflicts or breaking changes\n6. Only move the file after I confirm`;
+      navigator.clipboard.writeText(prompt).then(() => {
+        toast("Move prompt copied! Paste to Claude Code in your terminal.");
+      });
+    } else {
+      await doMove(item, selectedDest);
+    }
+  };
+
+  document.getElementById("moveModal").classList.remove("hidden");
+}
+
+async function openBulkMoveModal(items) {
+  const first = items[0];
+  const res = await fetchJson(`/api/destinations?path=${encodeURIComponent(first.path)}&category=${encodeURIComponent(first.category)}&name=${encodeURIComponent(first.name)}`);
+  if (!res.ok) {
+    toast(res.error, true);
+    return;
+  }
+
+  const listEl = document.getElementById("moveDestList");
+  const ordered = buildOrderedScopeEntries(res.destinations, res.currentScopeId);
+  let selectedDest = null;
+
+  listEl.innerHTML = ordered.map(renderDestinationRow).join("");
+
+  listEl.querySelectorAll(".dest").forEach((entry) => {
+    if (entry.classList.contains("cur")) return;
+    entry.addEventListener("click", () => {
+      listEl.querySelectorAll(".dest").forEach((node) => node.classList.remove("sel"));
+      entry.classList.add("sel");
+      selectedDest = entry.dataset.scopeId;
+      document.getElementById("moveConfirm").disabled = false;
+    });
+  });
+
+  document.getElementById("moveConfirm").disabled = true;
+  document.getElementById("moveConfirm").onclick = async () => {
+    if (!selectedDest) return;
+    closeMoveModal();
+
+    let ok = 0;
+    let fail = 0;
     for (const item of items) {
-      const result = await doMove(item.path, selectedDest, true); // true = skip refresh
+      const result = await doMove(item, selectedDest, true);
       if (result.ok) ok++;
       else fail++;
     }
+
     bulkSelected.clear();
     await refreshUI();
     toast(`Moved ${ok} item(s)${fail ? `, ${fail} failed` : ""}`);
@@ -660,633 +1217,523 @@ async function openBulkMoveModal(items) {
   document.getElementById("moveModal").classList.remove("hidden");
 }
 
-// ── Scope card drop zones (document-level, bypass SortableJS) ────────
-// SortableJS intercepts per-element dragover events on sortable containers.
-// Using document-level listeners in capture phase ensures highlighting works.
+function buildOrderedScopeEntries(destinations, currentScopeId) {
+  const currentScope = getScopeById(currentScopeId);
+  const allScopes = currentScope
+    ? [...destinations, { ...currentScope, isCurrent: true }]
+    : [...destinations];
 
-function setupScopeDropZones() {
-  document.addEventListener("dragover", (e) => {
-    if (!draggingItem) return;
+  const scopeMap = {};
+  for (const scope of data.scopes) scopeMap[scope.id] = scope;
+  for (const scope of allScopes) scopeMap[scope.id] = scope;
 
-    // Find the innermost scope-block under cursor
-    const scopeBlock = e.target.closest(".scope-block");
-
-    // Clear all highlights
-    document.querySelectorAll(".scope-block.drop-target").forEach(b => b.classList.remove("drop-target"));
-
-    if (scopeBlock) {
-      const hdr = scopeBlock.querySelector(":scope > .scope-hdr");
-      const scopeId = hdr?.dataset.scopeId;
-      if (scopeId && scopeId !== draggingItem.scopeId) {
-        e.preventDefault();
-        scopeBlock.classList.add("drop-target");
-      }
-    }
-  }, true); // capture phase
-
-  document.addEventListener("drop", (e) => {
-    if (!draggingItem) return;
-
-    const scopeBlock = e.target.closest(".scope-block");
-    document.querySelectorAll(".scope-block.drop-target").forEach(b => b.classList.remove("drop-target"));
-
-    if (!scopeBlock) return;
-    const hdr = scopeBlock.querySelector(":scope > .scope-hdr");
-    const scopeId = hdr?.dataset.scopeId;
-    if (!scopeId || scopeId === draggingItem.scopeId) return;
-
-    // If drop landed inside a sortable zone, SortableJS onEnd handles it
-    if (e.target.closest(".sortable-zone")) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const item = draggingItem;
-    const fromScope = data.scopes.find(s => s.id === item.scopeId);
-    const toScope = data.scopes.find(s => s.id === scopeId);
-
-    pendingDrag = { item, fromScopeId: item.scopeId, toScopeId: scopeId, revertFn: () => {} };
-    showDragConfirm(item, fromScope, toScope);
-    draggingItem = null;
-  }, true); // capture phase
-
-  document.addEventListener("dragend", () => {
-    draggingItem = null;
-    document.querySelectorAll(".scope-block.drop-target").forEach(b => b.classList.remove("drop-target"));
-  }, true); // capture phase
-}
-
-// ── Expand/Collapse toggle ───────────────────────────────────────────
-
-let allExpanded = false;
-
-function setupExpandToggle() {
-  const btn = document.getElementById("expandToggle");
-  btn.addEventListener("click", () => {
-    allExpanded = !allExpanded;
-    btn.innerHTML = allExpanded
-      ? '<span class="toggle-icon expanded"></span> Collapse all'
-      : '<span class="toggle-icon"></span> Expand all';
-
-    // Scopes always stay open — only categories toggle
-    // Expand all = categories open; Collapse all = categories closed (default)
-    document.querySelectorAll(".scope-hdr").forEach(hdr => {
-      const body = hdr.nextElementSibling;
-      const tog = hdr.querySelector(".scope-tog");
-      body?.classList.remove("c");
-      tog?.classList.remove("c");
-    });
-
-    document.querySelectorAll(".cat-hdr").forEach(hdr => {
-      const body = hdr.nextElementSibling;
-      const tog = hdr.querySelector(".cat-tog");
-      if (allExpanded) {
-        body?.classList.remove("c");
-        tog?.classList.remove("c");
-      } else {
-        body?.classList.add("c");
-        tog?.classList.add("c");
-      }
-    });
-
-    // Also expand/collapse bundles
-    document.querySelectorAll(".bundle-hdr").forEach(hdr => {
-      const body = hdr.nextElementSibling;
-      const tog = hdr.querySelector(".bundle-tog");
-      if (allExpanded) {
-        body?.classList.remove("c");
-        tog?.classList.remove("c");
-      } else {
-        body?.classList.add("c");
-        tog?.classList.add("c");
-      }
-    });
-  });
-}
-
-// ── Search ───────────────────────────────────────────────────────────
-
-function setupSearch() {
-  document.getElementById("searchInput").addEventListener("input", function () {
-    const q = this.value.toLowerCase();
-    const btn = document.getElementById("expandToggle");
-
-    // Auto-expand when searching, collapse back when cleared
-    if (q && !allExpanded) {
-      allExpanded = true;
-      btn.innerHTML = '<span class="toggle-icon expanded"></span> Collapse all';
-      document.querySelectorAll(".scope-hdr").forEach(hdr => {
-        hdr.nextElementSibling?.classList.remove("c");
-        hdr.querySelector(".scope-tog")?.classList.remove("c");
-      });
-      document.querySelectorAll(".cat-hdr").forEach(hdr => {
-        hdr.nextElementSibling?.classList.remove("c");
-        hdr.querySelector(".cat-tog")?.classList.remove("c");
-      });
-    } else if (!q && allExpanded) {
-      allExpanded = false;
-      btn.innerHTML = '<span class="toggle-icon"></span> Expand all';
-      document.querySelectorAll(".cat-hdr").forEach(hdr => {
-        hdr.nextElementSibling?.classList.add("c");
-        hdr.querySelector(".cat-tog")?.classList.add("c");
-      });
-    }
-
-    // 1. Show/hide individual item rows
-    document.querySelectorAll(".item-row").forEach(row => {
-      const text = row.textContent.toLowerCase();
-      row.style.display = (!q || text.includes(q)) ? "" : "none";
-    });
-
-    // 2a. Hide bundle groups where all items are hidden
-    document.querySelectorAll(".bundle-hdr").forEach(bundleHdr => {
-      const bundleBody = bundleHdr.nextElementSibling;
-      if (!bundleBody) return;
-      const rows = bundleBody.querySelectorAll(".item-row");
-      const anyVisible = rows.length === 0 || [...rows].some(r => r.style.display !== "none");
-      bundleHdr.style.display = anyVisible ? "" : "none";
-      bundleBody.style.display = anyVisible ? "" : "none";
-      // When searching, auto-expand visible bundles
-      if (q && anyVisible) {
-        bundleBody.classList.remove("c");
-        bundleHdr.querySelector(".bundle-tog")?.classList.remove("c");
-      }
-    });
-
-    // 2b. Hide category sections where all items are hidden
-    document.querySelectorAll(".cat-hdr").forEach(catHdr => {
-      const catBody = catHdr.nextElementSibling;
-      if (!catBody) return;
-      const rows = catBody.querySelectorAll(".item-row");
-      const anyVisible = rows.length === 0 || [...rows].some(r => r.style.display !== "none");
-      catHdr.style.display = anyVisible ? "" : "none";
-      catBody.style.display = anyVisible ? "" : "none";
-    });
-
-    // 3. Hide scope blocks bottom-up (deepest first so parents see child visibility)
-    const allBlocks = [...document.querySelectorAll(".scope-block")];
-    allBlocks.reverse().forEach(block => {
-      const hdr = block.querySelector(":scope > .scope-hdr");
-      const body = block.querySelector(":scope > .scope-body");
-      if (!hdr || !body) return;
-
-      // Check if any direct category content is visible
-      const catHdrs = body.querySelectorAll(":scope > .cat-hdr");
-      const anyCatVisible = [...catHdrs].some(ch => ch.style.display !== "none");
-
-      // Check if any child scope-block is visible
-      const childScopes = body.querySelectorAll(":scope > .child-scopes > .scope-block");
-      const anyChildVisible = [...childScopes].some(cb => cb.style.display !== "none");
-
-      const visible = !q || anyCatVisible || anyChildVisible;
-      block.style.display = visible ? "" : "none";
-    });
-  });
-}
-
-// ── Detail panel ─────────────────────────────────────────────────────
-
-function setupDetailPanel() {
-  document.getElementById("detailClose").addEventListener("click", closeDetail);
-  document.getElementById("detailOpen").addEventListener("click", () => {
-    if (selectedItem) window.open(`vscode://file${selectedItem.path}`, "_blank");
-  });
-  document.getElementById("detailMove").addEventListener("click", () => {
-    if (selectedItem && !selectedItem.locked) openMoveModal(selectedItem);
-  });
-  document.getElementById("detailDelete").addEventListener("click", () => {
-    if (selectedItem && !selectedItem.locked) openDeleteModal(selectedItem);
-  });
-}
-
-function showDetail(item, rowEl) {
-  selectedItem = item;
-  const panel = document.getElementById("detailPanel");
-  panel.classList.remove("hidden");
-
-  document.getElementById("detailTitle").textContent = item.name;
-  document.getElementById("detailType").innerHTML = `<span class="row-badge b-${item.subType || item.category}">${item.subType || item.category}</span>`;
-  const scope = data.scopes.find(s => s.id === item.scopeId);
-  document.getElementById("detailScope").textContent = scope?.name || item.scopeId;
-  document.getElementById("detailDesc").textContent = item.description || "—";
-  document.getElementById("detailSize").textContent = item.size || "—";
-  const detailDate = item.ctime && item.mtime
-    ? `Created: ${item.ctime} | Modified: ${item.mtime}`
-    : (item.mtime || "—");
-  document.getElementById("detailDate").textContent = detailDate;
-  document.getElementById("detailPath").textContent = item.path;
-
-  // Show/hide move and delete buttons
-  document.getElementById("detailMove").style.display = item.locked ? "none" : "";
-  document.getElementById("detailDelete").style.display = item.locked ? "none" : "";
-
-  // Highlight row
-  document.querySelectorAll(".item-row.selected").forEach(r => r.classList.remove("selected"));
-  if (rowEl) rowEl.classList.add("selected");
-
-  // Load preview
-  loadPreview(item);
-}
-
-async function loadPreview(item) {
-  const el = document.getElementById("previewContent");
-  el.textContent = "Loading...";
-
-  try {
-    // MCP: show config directly from item data
-    if (item.category === "mcp") {
-      el.textContent = JSON.stringify(item.mcpConfig || {}, null, 2);
-      return;
-    }
-
-    // Hook: show full hook config from settings file
-    if (item.category === "hook") {
-      try {
-        const res = await fetchJson(`/api/file-content?path=${encodeURIComponent(item.path)}`);
-        if (res.ok) {
-          const settings = JSON.parse(res.content);
-          const hookConfig = settings.hooks?.[item.name];
-          if (hookConfig) {
-            el.textContent = JSON.stringify(hookConfig, null, 2);
-          } else {
-            el.textContent = item.description || "(no content)";
-          }
-        } else {
-          el.textContent = item.description || "(no content)";
-        }
-      } catch {
-        el.textContent = item.description || "(no content)";
-      }
-      return;
-    }
-
-    // Plugin: directory, no single file to preview
-    if (item.category === "plugin") {
-      el.textContent = `Plugin directory: ${item.path}`;
-      return;
-    }
-
-    // Sessions: parse JSONL into readable conversation preview
-    if (item.category === "session") {
-      try {
-        const res = await fetchJson(`/api/session-preview?path=${encodeURIComponent(item.path)}`);
-        el.textContent = res.ok ? res.content : "Cannot load session preview";
-        // Scroll to bottom — user wants to see the most recent messages
-        requestAnimationFrame(() => el.scrollTop = el.scrollHeight);
-      } catch {
-        el.textContent = "Failed to load session preview";
-      }
-      return;
-    }
-
-    // Skill: read SKILL.md inside the directory
-    let filePath = item.path;
-    if (item.category === "skill") {
-      filePath = item.path + "/SKILL.md";
-    }
-
-    const res = await fetchJson(`/api/file-content?path=${encodeURIComponent(filePath)}`);
-    if (res.ok) {
-      el.textContent = res.content;
-    } else {
-      el.textContent = res.error || "Cannot load preview";
-    }
-  } catch {
-    el.textContent = "Failed to load preview";
-  }
-}
-
-function closeDetail() {
-  document.getElementById("detailPanel").classList.add("hidden");
-  document.querySelectorAll(".item-row.selected").forEach(r => r.classList.remove("selected"));
-  selectedItem = null;
-}
-
-// ── Drag confirm rendering ───────────────────────────────────────────
-
-function showDragConfirm(item, fromScope, toScope) {
-  const catConfig = CATEGORIES[item.category] || { icon: "📄", label: item.category };
-  const badgeClass = `b-${item.subType || item.category}`;
-  const fromIcon = SCOPE_ICONS[fromScope?.type] || "📂";
-  const toIcon = SCOPE_ICONS[toScope?.type] || "📂";
-
-  document.getElementById("dcPreview").innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
-      <span style="font-size:1.1rem;">${catConfig.icon}</span>
-      <div>
-        <div style="font-weight:700;color:var(--text-primary);font-size:0.88rem;">${esc(item.name)}</div>
-        <div style="display:flex;gap:6px;align-items:center;margin-top:3px;">
-          <span class="row-badge ${badgeClass}">${esc(item.subType || item.category)}</span>
-          <span style="font-size:0.7rem;color:var(--text-muted);">${esc(item.category)}</span>
-        </div>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border-light);">
-      <div style="flex:1;text-align:center;">
-        <div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">From</div>
-        <div style="font-size:0.82rem;font-weight:600;color:#dc2626;">${fromIcon} ${esc(fromScope?.name || "?")}</div>
-        <div style="font-size:0.6rem;color:var(--text-faint);">${esc(fromScope?.tag || "")}</div>
-      </div>
-      <div style="font-size:1.2rem;color:var(--text-faint);">→</div>
-      <div style="flex:1;text-align:center;">
-        <div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">To</div>
-        <div style="font-size:0.82rem;font-weight:600;color:#16a34a;">${toIcon} ${esc(toScope?.name || "?")}</div>
-        <div style="font-size:0.6rem;color:var(--text-faint);">${esc(toScope?.tag || "")}</div>
-      </div>
-    </div>
-  `;
-  document.getElementById("dragConfirmModal").classList.remove("hidden");
-}
-
-// ── Modals ───────────────────────────────────────────────────────────
-
-function openDeleteModal(item) {
-  pendingDelete = item;
-  const catConfig = CATEGORIES[item.category] || { icon: "📄", label: item.category };
-  const scope = data.scopes.find(s => s.id === item.scopeId);
-
-  document.getElementById("deletePreview").innerHTML = `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-      <span style="font-size:1.1rem;">${catConfig.icon}</span>
-      <div>
-        <div style="font-weight:700;color:var(--text-primary);font-size:0.88rem;">${esc(item.name)}</div>
-        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;">${esc(scope?.name || item.scopeId)} · ${esc(item.category)}</div>
-      </div>
-    </div>
-    <div style="font-size:0.68rem;color:#dc2626;margin-top:8px;padding-top:8px;border-top:1px solid var(--border-light);">
-      ${item.category === "skill" ? "This will delete the entire skill folder and all its files." : "This will permanently delete the file."}
-    </div>`;
-
-  document.getElementById("deleteModal").classList.remove("hidden");
-}
-
-function setupModals() {
-  // Drag confirm
-  document.getElementById("dcCancel").addEventListener("click", () => {
-    document.getElementById("dragConfirmModal").classList.add("hidden");
-    if (pendingDrag?.revertFn) pendingDrag.revertFn();
-    pendingDrag = null;
-  });
-  document.getElementById("dcConfirm").addEventListener("click", async () => {
-    document.getElementById("dragConfirmModal").classList.add("hidden");
-    if (pendingDrag) {
-      const result = await doMove(pendingDrag.item.path, pendingDrag.toScopeId);
-      if (!result.ok && pendingDrag.revertFn) pendingDrag.revertFn();
-      pendingDrag = null;
-    }
-  });
-
-  // Move modal
-  document.getElementById("moveCancel").addEventListener("click", closeMoveModal);
-  document.getElementById("moveModal").addEventListener("click", (e) => {
-    if (e.target === document.getElementById("moveModal")) closeMoveModal();
-  });
-  document.getElementById("dragConfirmModal").addEventListener("click", (e) => {
-    if (e.target === document.getElementById("dragConfirmModal")) {
-      document.getElementById("dragConfirmModal").classList.add("hidden");
-      if (pendingDrag?.revertFn) pendingDrag.revertFn();
-      pendingDrag = null;
-    }
-  });
-
-  // Delete modal
-  document.getElementById("deleteCancel").addEventListener("click", () => {
-    document.getElementById("deleteModal").classList.add("hidden");
-    pendingDelete = null;
-  });
-  document.getElementById("deleteConfirm").addEventListener("click", async () => {
-    document.getElementById("deleteModal").classList.add("hidden");
-    if (pendingDelete) {
-      await doDelete(pendingDelete.path);
-      pendingDelete = null;
-    }
-  });
-  document.getElementById("deleteModal").addEventListener("click", (e) => {
-    if (e.target === document.getElementById("deleteModal")) {
-      document.getElementById("deleteModal").classList.add("hidden");
-      pendingDelete = null;
-    }
-  });
-}
-
-async function openMoveModal(item) {
-  const res = await fetchJson(`/api/destinations?path=${encodeURIComponent(item.path)}&category=${encodeURIComponent(item.category)}&name=${encodeURIComponent(item.name)}`);
-  if (!res.ok) return toast(res.error, true);
-
-  const listEl = document.getElementById("moveDestList");
-  // Build full scope lookup for indent
-  const allScopeMap = {};
-  for (const s of data.scopes) allScopeMap[s.id] = s;
-  for (const s of res.destinations) allScopeMap[s.id] = s;
-
-  function getDepth(scope) {
+  const getDepth = (scope) => {
     let depth = 0;
-    let cur = scope;
-    while (cur.parentId) {
+    let current = scope;
+    while (current.parentId) {
       depth++;
-      cur = allScopeMap[cur.parentId] || { parentId: null };
+      current = scopeMap[current.parentId] || { parentId: null };
     }
     return depth;
-  }
+  };
 
-  // Add current scope (grayed out) + all destinations
-  const currentScope = data.scopes.find(s => s.id === res.currentScopeId);
-  const allEntries = [];
-
-  // Insert current scope at the right position based on depth
-  const allScopes = currentScope
-    ? [...res.destinations, { ...currentScope, isCurrent: true }]
-    : res.destinations;
-
-  // Sort by depth then name to maintain tree order
   allScopes.sort((a, b) => {
-    const da = getDepth(a), db = getDepth(b);
+    const da = getDepth(a);
+    const db = getDepth(b);
     if (da !== db) return da - db;
     return a.name.localeCompare(b.name);
   });
 
-  // Reorder to put children right after their parent
   const ordered = [];
   function addWithChildren(parentId) {
-    for (const s of allScopes) {
-      if ((s.parentId || null) === parentId) {
-        ordered.push(s);
-        addWithChildren(s.id);
+    for (const scope of allScopes) {
+      if ((scope.parentId || null) === parentId) {
+        ordered.push({ ...scope, depth: getDepth(scope) });
+        addWithChildren(scope.id);
       }
     }
   }
+
   addWithChildren(null);
+  return ordered;
+}
 
-  listEl.innerHTML = ordered.map(scope => {
-    const depth = getDepth(scope);
-    const indentPx = depth > 0 ? ` style="padding-left:${depth * 28}px"` : "";
-    const icon = scope.id === "global" ? "🌐" : (SCOPE_ICONS[scope.type] || "📂");
-    const curClass = scope.isCurrent ? " cur" : "";
-    const curLabel = scope.isCurrent ? ' <span style="font-size:0.6rem;color:var(--text-faint);margin-left:4px;">(current)</span>' : "";
-    return `<div class="dest${curClass}" data-scope-id="${esc(scope.id)}"${indentPx}>
+function renderDestinationRow(scope) {
+  const indent = scope.depth > 0 ? ` style="padding-left:${scope.depth * 28}px"` : "";
+  const icon = scope.id === "global" ? "🌐" : (SCOPE_ICONS[scope.type] || "📂");
+  const currentLabel = scope.isCurrent
+    ? ' <span style="font-size:0.6rem;color:var(--text-faint);margin-left:4px;">(current)</span>'
+    : "";
+
+  return `
+    <div class="dest${scope.isCurrent ? " cur" : ""}" data-scope-id="${esc(scope.id)}"${indent}>
       <span class="di">${icon}</span>
-      <span class="dn">${esc(scope.name)}${curLabel}</span>
-      <span class="dp">${esc(scope.tag)}</span>
+      <span class="dn">${esc(scope.name)}${currentLabel}</span>
+      <span class="dp">${esc(scope.type)}</span>
     </div>`;
-  }).join("");
-
-  // Click handlers
-  let selectedDest = null;
-  listEl.querySelectorAll(".dest").forEach(d => {
-    d.addEventListener("click", () => {
-      listEl.querySelectorAll(".dest").forEach(x => x.classList.remove("sel"));
-      d.classList.add("sel");
-      selectedDest = d.dataset.scopeId;
-      document.getElementById("moveConfirm").disabled = false;
-    });
-  });
-
-  document.getElementById("moveConfirm").disabled = true;
-  document.getElementById("moveConfirm").onclick = async () => {
-    if (!selectedDest) return;
-    closeMoveModal();
-    await doMove(item.path, selectedDest);
-  };
-
-  document.getElementById("moveModal").classList.remove("hidden");
 }
 
 function closeMoveModal() {
   document.getElementById("moveModal").classList.add("hidden");
 }
 
-// ── API calls ────────────────────────────────────────────────────────
-
 async function refreshUI() {
-  saveExpandState();
+  const selectedScopeBefore = selectedScopeId;
+  const selectedItemBefore = selectedItem ? itemKey(selectedItem) : null;
+
   data = await fetchJson("/api/scan");
-  renderPills();
-  renderTree();
-  closeDetail();
+
+  selectedScopeId = data.scopes.some((scope) => scope.id === selectedScopeBefore)
+    ? selectedScopeBefore
+    : getInitialSelectedScopeId();
+
+  if (selectedItemBefore) {
+    const nextItem = getItemByKey(selectedItemBefore);
+    if (nextItem) {
+      selectedItem = nextItem;
+      selectedScopeId = nextItem.scopeId;
+    } else {
+      selectedItem = null;
+      detailPreviewKey = null;
+    }
+  }
+
+  bulkSelected = new Set([...bulkSelected].filter((key) => Boolean(getItemByKey(key))));
+  initializeScopeState();
+  renderAll();
 }
 
-async function doMove(itemPath, toScopeId, skipRefresh = false) {
-  // Find item before move for undo info
-  const item = data.items.find(i => i.path === itemPath);
-  const fromScopeId = item?.scopeId;
+async function doMove(itemRef, toScopeId, skipRefresh = false) {
+  const item = resolveItem(itemRef);
+  if (!item) return { ok: false, error: "Item not found" };
 
+  const fromScopeId = item.scopeId;
   const response = await fetch("/api/move", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ itemPath, toScopeId, category: item?.category, name: item?.name }),
+    body: JSON.stringify({
+      itemPath: item.path,
+      toScopeId,
+      category: item.category,
+      name: item.name,
+    }),
   });
   const result = await response.json();
 
-  if (!skipRefresh) {
-    if (result.ok) {
-      const undoFn = async () => {
-        // Move back: result.to is the new path, fromScopeId is where it came from
-        const undoResult = await fetch("/api/move", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemPath: result.to, toScopeId: fromScopeId }),
-        }).then(r => r.json());
-        if (undoResult.ok) { toast("Move undone"); await refreshUI(); }
-        else toast(undoResult.error, true);
-      };
-      toast(result.message, false, undoFn);
-      await refreshUI();
-    } else {
-      toast(result.error, true);
+  if (skipRefresh) return result;
+
+  if (result.ok) {
+    const movedKey = `${item.category}::${item.name}::${result.to}`;
+    if (selectedItem && itemKey(selectedItem) === itemKey(item)) {
+      selectedItem = { ...item, path: result.to, scopeId: toScopeId };
+      selectedScopeId = toScopeId;
+      detailPreviewKey = null;
     }
+
+    const undoFn = async () => {
+      const undoResult = await fetch("/api/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemPath: result.to,
+          toScopeId: fromScopeId,
+          category: item.category,
+          name: item.name,
+        }),
+      }).then((res) => res.json());
+
+      if (undoResult.ok) {
+        if (selectedItem && itemKey(selectedItem) === movedKey) {
+          selectedItem = { ...item };
+          selectedScopeId = fromScopeId;
+          detailPreviewKey = null;
+        }
+        toast("Move undone");
+        await refreshUI();
+      } else {
+        toast(undoResult.error, true);
+      }
+    };
+
+    toast(result.message, false, undoFn);
+    await refreshUI();
+  } else {
+    toast(result.error, true);
   }
 
   return result;
 }
 
-async function doDelete(itemPath, skipRefresh = false) {
-  // Backup content before delete for undo
-  const item = data.items.find(i => i.path === itemPath);
+async function doDelete(itemRef, skipRefresh = false) {
+  const item = resolveItem(itemRef);
+  if (!item) return { ok: false, error: "Item not found" };
+
   let backupContent = null;
   let mcpBackup = null;
-  if (item) {
-    try {
-      if (item.category === "mcp") {
-        // MCP: backup the server config from item data
-        mcpBackup = { name: item.name, config: item.mcpConfig, mcpJsonPath: item.path };
-      } else {
-        let readPath = item.path;
-        if (item.category === "skill") readPath = item.path + "/SKILL.md";
-        const backup = await fetchJson(`/api/file-content?path=${encodeURIComponent(readPath)}`);
-        if (backup.ok) backupContent = backup.content;
-      }
-    } catch { /* best effort */ }
+
+  try {
+    if (item.category === "mcp") {
+      mcpBackup = { name: item.name, config: item.mcpConfig, mcpJsonPath: item.path };
+    } else {
+      let readPath = item.path;
+      if (item.category === "skill") readPath = `${item.path}/SKILL.md`;
+      const backup = await fetchJson(`/api/file-content?path=${encodeURIComponent(readPath)}`);
+      if (backup.ok) backupContent = backup.content;
+    }
+  } catch {
+    // best effort backup only
   }
 
   const response = await fetch("/api/delete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ itemPath }),
+    body: JSON.stringify({
+      itemPath: item.path,
+      category: item.category,
+      name: item.name,
+    }),
   });
   const result = await response.json();
 
-  if (!skipRefresh) {
-    if (result.ok) {
-      let undoFn = null;
-      if (mcpBackup) {
-        // MCP undo: re-add the server entry to .mcp.json
-        undoFn = async () => {
-          const restoreResult = await fetch("/api/restore-mcp", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(mcpBackup),
-          }).then(r => r.json());
-          if (restoreResult.ok) { toast("Delete undone"); await refreshUI(); }
-          else toast(restoreResult.error, true);
-        };
-      } else if (backupContent) {
-        undoFn = async () => {
-          const restoreResult = await fetch("/api/restore", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              filePath: item.path,
-              content: backupContent,
-              isDir: item.category === "skill",
-            }),
-          }).then(r => r.json());
-          if (restoreResult.ok) { toast("Delete undone"); await refreshUI(); }
-          else toast(restoreResult.error, true);
-        };
-      }
-      toast(result.message, false, undoFn);
-      await refreshUI();
-    } else {
-      toast(result.error, true);
+  if (skipRefresh) return result;
+
+  if (result.ok) {
+    if (selectedItem && itemKey(selectedItem) === itemKey(item)) {
+      selectedItem = null;
+      detailPreviewKey = null;
     }
+
+    let undoFn = null;
+    if (mcpBackup) {
+      undoFn = async () => {
+        const restoreResult = await fetch("/api/restore-mcp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(mcpBackup),
+        }).then((res) => res.json());
+
+        if (restoreResult.ok) {
+          toast("Delete undone");
+          await refreshUI();
+        } else {
+          toast(restoreResult.error, true);
+        }
+      };
+    } else if (backupContent) {
+      undoFn = async () => {
+        const restoreResult = await fetch("/api/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filePath: item.path,
+            content: backupContent,
+            isDir: item.category === "skill",
+          }),
+        }).then((res) => res.json());
+
+        if (restoreResult.ok) {
+          toast("Delete undone");
+          await refreshUI();
+        } else {
+          toast(restoreResult.error, true);
+        }
+      };
+    }
+
+    toast(result.message, false, undoFn);
+    await refreshUI();
+  } else {
+    toast(result.error, true);
   }
 
   return result;
 }
 
-// ── Toast with optional Undo ─────────────────────────────────────────
-
-let toastTimer = null;
+function updateBulkBar() {
+  const bar = document.getElementById("bulkBar");
+  const count = bulkSelected.size;
+  bar.classList.toggle("hidden", count === 0);
+  document.getElementById("bulkCount").textContent = `${count} selected`;
+}
 
 function toast(msg, isError = false, undoFn = null) {
   const el = document.getElementById("toast");
+  const msgEl = document.getElementById("toastMsg");
   if (toastTimer) clearTimeout(toastTimer);
 
   if (undoFn) {
-    document.getElementById("toastMsg").innerHTML =
-      `${esc(msg)} <button class="toast-undo" id="toastUndo">Undo</button>`;
+    msgEl.innerHTML = `${esc(msg)} <button class="toast-undo" id="toastUndo">Undo</button>`;
     el.className = "toast";
     document.getElementById("toastUndo").onclick = async () => {
       el.classList.add("hidden");
       await undoFn();
     };
-    toastTimer = setTimeout(() => el.classList.add("hidden"), 8000); // longer for undo
+    toastTimer = setTimeout(() => el.classList.add("hidden"), 8000);
   } else {
-    document.getElementById("toastMsg").textContent = msg;
+    msgEl.textContent = msg;
     el.className = isError ? "toast error" : "toast";
     toastTimer = setTimeout(() => el.classList.add("hidden"), 4000);
   }
 }
 
-// ── Start ────────────────────────────────────────────────────────────
+function normalizeState() {
+  if (!data) return;
+
+  if (!data.scopes.some((scope) => scope.id === selectedScopeId)) {
+    selectedScopeId = getInitialSelectedScopeId();
+  }
+
+  const visibleScopeId = getFirstVisibleScopeId();
+  if (visibleScopeId && !scopeVisibleInSidebar(getScopeById(selectedScopeId))) {
+    selectedScopeId = visibleScopeId;
+  }
+
+  expandScopePath(selectedScopeId);
+
+  if (selectedItem) {
+    const nextItem = getItemByKey(itemKey(selectedItem));
+    if (!nextItem || nextItem.scopeId !== selectedScopeId || !itemVisibleInMain(nextItem)) {
+      selectedItem = null;
+      detailPreviewKey = null;
+    } else {
+      selectedItem = nextItem;
+    }
+  }
+
+  bulkSelected = new Set([...bulkSelected].filter((key) => Boolean(getItemByKey(key))));
+}
+
+function initializeScopeState() {
+  const scopeIds = new Set(data.scopes.map((scope) => scope.id));
+  uiState.expandedScopes = new Set([...uiState.expandedScopes].filter((id) => scopeIds.has(id)));
+
+  getRootScopes().forEach((scope) => uiState.expandedScopes.add(scope.id));
+  expandScopePath(selectedScopeId);
+}
+
+function expandScopePath(scopeId) {
+  let current = getScopeById(scopeId);
+  while (current) {
+    uiState.expandedScopes.add(current.id);
+    current = current.parentId ? getScopeById(current.parentId) : null;
+  }
+}
+
+function getInitialSelectedScopeId() {
+  const scopesWithItems = data.scopes
+    .filter((scope) => getItemsForScope(scope.id).length > 0)
+    .sort((a, b) => {
+      const depthDiff = getScopeDepth(b) - getScopeDepth(a);
+      if (depthDiff !== 0) return depthDiff;
+      return a.name.localeCompare(b.name);
+    });
+
+  if (scopesWithItems[0]) return scopesWithItems[0].id;
+  return data.scopes[0]?.id || "global";
+}
+
+function getRootScopes() {
+  return data.scopes.filter((scope) => scope.parentId === null);
+}
+
+function getScopeById(scopeId) {
+  return data?.scopes.find((scope) => scope.id === scopeId) || null;
+}
+
+function getItemsForScope(scopeId) {
+  return data.items.filter((item) => item.scopeId === scopeId);
+}
+
+function getChildScopes(scopeId) {
+  return data.scopes.filter((scope) => scope.parentId === scopeId);
+}
+
+function getScopeDepth(scope) {
+  let depth = 0;
+  let current = scope;
+  while (current?.parentId) {
+    depth++;
+    current = getScopeById(current.parentId);
+  }
+  return depth;
+}
+
+function getScopeChain(scope) {
+  const chain = [];
+  let current = scope;
+  while (current?.parentId) {
+    const parent = getScopeById(current.parentId);
+    if (!parent) break;
+    chain.unshift(parent);
+    current = parent;
+  }
+  return chain;
+}
+
+function getRecursiveScopeCount(scopeId) {
+  let count = getItemsForScope(scopeId).length;
+  for (const child of getChildScopes(scopeId)) {
+    count += getRecursiveScopeCount(child.id);
+  }
+  return count;
+}
+
+function getSidebarCategoryCounts(scopeId) {
+  const counts = new Map();
+  for (const category of CATEGORY_ORDER) counts.set(category, 0);
+
+  for (const item of getItemsForScope(scopeId)) {
+    if (searchQuery && !itemMatchesSearch(item)) continue;
+    counts.set(item.category, (counts.get(item.category) || 0) + 1);
+  }
+
+  return CATEGORY_ORDER
+    .map((category) => ({ category, count: counts.get(category) || 0 }))
+    .filter((entry) => entry.count > 0);
+}
+
+function scopeVisibleInSidebar(scope) {
+  if (!scope) return false;
+  if (!searchQuery) return true;
+  if (scope.name.toLowerCase().includes(searchQuery)) return true;
+  if (getItemsForScope(scope.id).some((item) => itemMatchesSearch(item))) return true;
+  return getChildScopes(scope.id).some((child) => scopeVisibleInSidebar(child));
+}
+
+function getFirstVisibleScopeId() {
+  for (const root of getRootScopes()) {
+    const found = findVisibleScopeInTree(root);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findVisibleScopeInTree(scope) {
+  if (!scopeVisibleInSidebar(scope)) return null;
+  if (getVisibleItemsForScope(scope.id).length > 0 || scope.name.toLowerCase().includes(searchQuery)) {
+    return scope.id;
+  }
+
+  for (const child of getChildScopes(scope.id)) {
+    const found = findVisibleScopeInTree(child);
+    if (found) return found;
+  }
+
+  return scope.id;
+}
+
+function getVisibleItemsForScope(scopeId) {
+  return getItemsForScope(scopeId).filter((item) => itemVisibleInMain(item));
+}
+
+function itemVisibleInMain(item) {
+  return item.scopeId === selectedScopeId && itemMatchesFilters(item) && itemMatchesSearch(item);
+}
+
+function itemMatchesFilters(item) {
+  return activeFilters.size === 0 || activeFilters.has(item.category);
+}
+
+function itemMatchesSearch(item) {
+  if (!searchQuery) return true;
+  const text = [
+    item.name,
+    item.description,
+    item.category,
+    item.subType,
+    item.path,
+  ].join(" ").toLowerCase();
+  return text.includes(searchQuery);
+}
+
+function sortCategoryItems(category, items) {
+  const catKey = `${selectedScopeId}::${category}`;
+  const sortState = uiState.sortBy[catKey];
+
+  let sorted = [...items];
+
+  // Default sort for memory: by subType then name
+  if (!sortState && category === "memory") {
+    const order = { project: 0, reference: 1, user: 2, feedback: 3 };
+    return sorted.sort((a, b) => {
+      const aOrder = order[a.subType] ?? 99;
+      const bOrder = order[b.subType] ?? 99;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  if (!sortState) return sorted;
+
+  const dir = sortState.dir === "desc" ? -1 : 1;
+  if (sortState.field === "size") {
+    sorted.sort((a, b) => dir * ((a.sizeBytes || 0) - (b.sizeBytes || 0)));
+  } else if (sortState.field === "date") {
+    sorted.sort((a, b) => dir * ((a.mtime || "").localeCompare(b.mtime || "")));
+  }
+  return sorted;
+}
+
+function sortArrow(catKey, field) {
+  const s = uiState.sortBy[catKey];
+  if (!s || s.field !== field) return "↕";
+  return s.dir === "asc" ? "↑" : "↓";
+}
+
+function canMoveItem(item) {
+  return !item.locked && ["memory", "skill", "mcp", "plan"].includes(item.category);
+}
+
+function canDeleteItem(item) {
+  return !item.locked;
+}
+
+function itemKey(item) {
+  return `${item.category}::${item.name}::${item.path}`;
+}
+
+function getItemByKey(key) {
+  return data?.items.find((item) => itemKey(item) === key) || null;
+}
+
+function getSelectedItems() {
+  return [...bulkSelected]
+    .map((key) => getItemByKey(key))
+    .filter(Boolean);
+}
+
+function resolveItem(itemRef) {
+  if (!itemRef) return null;
+  if (typeof itemRef === "string") return getItemByKey(itemRef) || data.items.find((item) => item.path === itemRef) || null;
+  return getItemByKey(itemKey(itemRef)) || itemRef;
+}
+
+function formatShortDate(raw) {
+  if (!raw) return "—";
+  const date = new Date(`${raw}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return raw;
+  return SHORT_DATE.format(date);
+}
+
+function pluralize(count, singular) {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+}
+
+function capitalize(text) {
+  return text ? text[0].toUpperCase() + text.slice(1) : "";
+}
+
+function esc(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return window.CSS.escape(value);
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
 init();
