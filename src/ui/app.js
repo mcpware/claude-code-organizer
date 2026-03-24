@@ -999,6 +999,7 @@ function showDetail(item) {
   const next = getItemByKey(itemKey(item)) || item;
   const shouldLoadPreview = itemKey(next) !== detailPreviewKey;
   selectedItem = next;
+  document.getElementById("detailPanel").classList.remove("hidden");
   renderDetailPanel(shouldLoadPreview);
   updateSelectedItemHighlight();
   if (shouldLoadPreview) {
@@ -1071,6 +1072,7 @@ async function loadPreview(item) {
 function closeDetail() {
   selectedItem = null;
   detailPreviewKey = null;
+  document.getElementById("detailPanel").classList.add("hidden");
   renderDetailPanel();
   updateSelectedItemHighlight();
 }

@@ -115,6 +115,8 @@ body {
   display: flex;
   flex-direction: column;
 }
+.detail.hidden { display: none; }
+#resizerRight:has(+ .detail.hidden) { display: none; }
 
 .resizer {
   width: 4px;
