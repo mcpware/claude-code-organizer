@@ -67,3 +67,4 @@ jobs:
 
       - name: Publish to MCP Registry
         run: ./mcp-publisher publish
+        continue-on-error: true
