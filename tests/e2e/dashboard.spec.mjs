@@ -2169,3 +2169,127 @@ test.describe('Export', () => {
     expect(res.status).toBe(400);
   });
 });
+
+// ═════════════════════════════════════════════════════════════════════
+// LAYER: Sidebar UX — collapse all + drag highlight
+// ═════════════════════════════════════════════════════════════════════
+
+test.describe('Sidebar UX', () => {
+  let env;
+  test.beforeEach(async () => { env = await createTestEnv(); });
+  test.afterEach(async () => { await env.cleanup(); });
+
+  test('collapse all button exists and toggles sidebar state', async ({ page }) => {
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+
+    const btn = page.locator('#collapseAllBtn');
+    await expect(btn).toBeVisible();
+
+    // Initially some scopes should be expanded (global auto-expands)
+    const bodiesBefore = await page.locator('.s-scope-body:not(.collapsed)').count();
+
+    // Click collapse all
+    await btn.click();
+    await page.waitForTimeout(200);
+
+    // After collapse, category rows should be hidden but scope tree visible
+    // Global scope header should still be visible
+    await expect(page.locator('.s-scope-hdr[data-scope-id="global"]')).toBeVisible();
+
+    // Click again to expand
+    await btn.click();
+    await page.waitForTimeout(200);
+  });
+
+  test('collapse all button icon toggles between ▤ and ▦', async ({ page }) => {
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+
+    const btn = page.locator('#collapseAllBtn');
+    const initialText = await btn.textContent();
+    expect(initialText).toBe('▤');
+
+    await btn.click();
+    await page.waitForTimeout(100);
+    const collapsedText = await btn.textContent();
+    expect(collapsedText).toBe('▦');
+
+    await btn.click();
+    await page.waitForTimeout(100);
+    const expandedText = await btn.textContent();
+    expect(expandedText).toBe('▤');
+  });
+
+  test('sidebar has drag-active CSS class support', async ({ page }) => {
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+
+    const sidebar = page.locator('#sidebar');
+
+    // Initially no drag-active
+    await expect(sidebar).not.toHaveClass(/drag-active/);
+
+    // Simulate adding class (real drag is hard in Playwright with SortableJS)
+    await page.evaluate(() => {
+      document.getElementById('sidebar').classList.add('drag-active');
+    });
+    await expect(sidebar).toHaveClass(/drag-active/);
+
+    // Scope headers should have border-left style from CSS
+    const scopeHdr = page.locator('.s-scope-hdr').first();
+    const borderLeft = await scopeHdr.evaluate(el => getComputedStyle(el).borderLeftStyle);
+    expect(borderLeft).toBe('solid');
+
+    // Remove class
+    await page.evaluate(() => {
+      document.getElementById('sidebar').classList.remove('drag-active');
+    });
+    await expect(sidebar).not.toHaveClass(/drag-active/);
+  });
+
+  test('drop-target class highlights scope header', async ({ page }) => {
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+
+    // Add drop-target to global scope
+    await page.evaluate(() => {
+      document.querySelector('.scope-block[data-scope-id="global"]').classList.add('drop-target');
+    });
+
+    const hdr = page.locator('.scope-block.drop-target > .s-scope-hdr');
+    await expect(hdr).toBeVisible();
+
+    // Should have distinct styling
+    const bg = await hdr.evaluate(el => getComputedStyle(el).backgroundColor);
+    expect(bg).not.toBe('rgba(0, 0, 0, 0)'); // Not transparent — has active bg
+  });
+
+  test('_dragCollapsed flag hides categories but keeps scope tree', async ({ page }) => {
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+
+    // Expand global scope first
+    await page.locator('.s-scope-hdr[data-scope-id="global"]').click();
+    await page.waitForTimeout(200);
+
+    // Should see category rows (s-cat) when expanded
+    const catsBefore = await page.locator('.s-cat').count();
+    expect(catsBefore).toBeGreaterThan(0);
+
+    // Trigger drag collapse via JS
+    await page.evaluate(() => {
+      window.__uiState = window.__uiState || {};
+      // Access internal state through collapse button click
+      document.getElementById('collapseAllBtn').click();
+    });
+    await page.waitForTimeout(200);
+
+    // Category rows should be gone
+    const catsAfter = await page.locator('.s-cat').count();
+    expect(catsAfter).toBeLessThan(catsBefore);
+
+    // But scope headers should still be visible
+    await expect(page.locator('.s-scope-hdr[data-scope-id="global"]')).toBeVisible();
+  });
+});

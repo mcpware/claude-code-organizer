@@ -135,6 +135,7 @@ function setupUi() {
   setupBulkBar();
   setupScopeDropZones();
   setupThemeToggle();
+  setupCollapseAll();
   setupCcActions();
   setupExport();
   setupResizers();
@@ -359,6 +360,24 @@ function setupThemeToggle() {
   });
 }
 
+function setupCollapseAll() {
+  const button = document.getElementById("collapseAllBtn");
+  button.addEventListener("click", () => {
+    if (uiState._dragCollapsed) {
+      // Restore full view
+      uiState._dragCollapsed = false;
+      button.title = "Collapse to tree";
+      button.textContent = "▤";
+    } else {
+      // Collapse: show scope tree only, hide category sub-items
+      uiState._dragCollapsed = true;
+      button.title = "Expand all";
+      button.textContent = "▦";
+    }
+    renderSidebar();
+  });
+}
+
 function updateThemeButton() {
   const button = document.getElementById("themeToggle");
   button.textContent = document.body.classList.contains("dark") ? "☀ Light" : "◐ Dark";
@@ -456,23 +475,31 @@ function renderSidebarScope(scope) {
     })
     .join("");
 
+  const isDragMode = uiState._dragCollapsed;
   const hasNestedContent = Boolean(categoryRows || childHtml);
+  const hasChildren = Boolean(childHtml);
   const isExpanded = hasNestedContent && (searchQuery ? true : uiState.expandedScopes.has(scope.id));
+  // In drag mode: always show children (scope tree), hide categories
+  const showBody = isDragMode ? hasChildren : (isExpanded && hasNestedContent);
   const icon = SCOPE_ICONS[scope.type] || "📂";
 
   return `
     <div class="s-scope scope-block" data-scope-id="${esc(scope.id)}">
       <div class="s-scope-hdr${scope.id === selectedScopeId ? " active" : ""}" data-scope-id="${esc(scope.id)}">
-        <span class="s-tog${hasNestedContent ? (isExpanded ? "" : " collapsed") : " empty"}">▾</span>
+        <span class="s-tog${hasNestedContent ? (isExpanded || isDragMode ? "" : " collapsed") : " empty"}">▾</span>
         <span class="s-ico">${icon}</span>
         <span class="s-nm">${esc(scope.name)}</span>
         <span class="s-cnt">${getRecursiveScopeCount(scope.id)}</span>
       </div>
-      ${hasNestedContent ? `
-        <div class="s-scope-body${isExpanded ? "" : " collapsed"}">
+      ${showBody ? `
+        <div class="s-scope-body">
+          ${(!isDragMode && categoryRows) ? `<div>${categoryRows}</div>` : ""}
+          ${childHtml ? `<div class="s-children">${childHtml}</div>` : ""}
+        </div>` : (hasNestedContent && !showBody ? `
+        <div class="s-scope-body collapsed">
           ${categoryRows ? `<div>${categoryRows}</div>` : ""}
           ${childHtml ? `<div class="s-children">${childHtml}</div>` : ""}
-        </div>` : ""}
+        </div>` : "")}
     </div>`;
 }
 
@@ -960,10 +987,18 @@ function initSortable() {
       bubbleScroll: true,
       onStart(evt) {
         draggingItem = getItemByKey(evt.item.dataset.itemKey);
+        document.getElementById("sidebar").classList.add("drag-active");
+        // Show only scope tree (hide category sub-items) during drag
+        uiState._dragCollapsed = true;
+        renderSidebar();
       },
       onEnd(evt) {
         draggingItem = null;
         clearScopeHighlights();
+        document.getElementById("sidebar").classList.remove("drag-active");
+        // Restore full sidebar after drag
+        uiState._dragCollapsed = false;
+        renderSidebar();
 
         if (evt.from === evt.to) return;
 
@@ -1057,6 +1092,11 @@ function setupScopeDropZones() {
   document.addEventListener("dragend", () => {
     draggingItem = null;
     clearScopeHighlights();
+    document.getElementById("sidebar").classList.remove("drag-active");
+    if (uiState._dragCollapsed) {
+      uiState._dragCollapsed = false;
+      renderSidebar();
+    }
   }, true);
 }
 

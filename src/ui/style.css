@@ -708,9 +708,23 @@ body {
   text-align: center;
 }
 
+/* Drag-active: all sidebar scopes pulse to hint "drop here" */
+.sidebar.drag-active .scope-block > .s-scope-hdr,
+.sidebar.drag-active .scope-block > .s-scope-hdr.active {
+  border-left: 2px solid var(--accent);
+  transition: all 200ms;
+}
+.sidebar.drag-active .scope-block > .s-scope-hdr:hover,
+.sidebar.drag-active .scope-block > .s-scope-hdr.active:hover {
+  background: var(--sidebar-active);
+}
+
+/* The specific drop target gets brighter highlight */
 .scope-block.drop-target > .s-scope-hdr {
   background: var(--sidebar-active);
   color: var(--sidebar-text-bright);
+  border-left: 3px solid var(--accent);
+  box-shadow: inset 0 0 12px oklch(0.58 0.15 175 / 0.15);
 }
 
 .modal-bg {
