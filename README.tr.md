@@ -15,58 +15,65 @@
 
 ## Sorun
 
-Claude Code'u her kullandığınızda, iki şey sessizce gerçekleşir — ve ikisi de size görünmez.
+Hiç fark ettin mi? Claude Code'u her açtığında, daha bir şey yazmadan context window'un üçte biri çoktan gitmiş oluyor.
 
-### Sorun 1: Context'in ne kadarının zaten kullanıldığını bilmiyorsunuz
+### Token bütçen daha başlamadan tükeniyor
 
-Bu, iki haftalık kullanımdan sonra gerçek bir proje dizini:
+Claude Code başlarken tüm config dosyalarını otomatik yüklüyor — CLAUDE.md, memory'ler, skill'ler, MCP server tanımları, hook'lar, rule'lar vs. Sen daha hiçbir şey yazmadın ama hepsi zaten context window'a girmiş durumda.
+
+İki haftalık gerçek bir projeye bak:
 
 ![Context Budget](docs/democontextbudged.png)
 
-**Bu dizinde bir Claude Code oturumu başlatırsanız, herhangi bir konuşma başlamadan önce zaten 70.9K token yüklenmiş olur.** Bu, 200K context window'unuzun %35.4'ü — tek bir karakter yazmadan yok olmuş demek. Yalnızca bu overhead için tahmini maliyet: Opus'ta oturum başına $1.06 USD, Sonnet'te $0.21 USD.
+**70.9K token — 200K context window'unun %35.4'ü, tek karakter yazmadan uçmuş.** Bu overhead'in tahmini maliyeti: Opus $1.06 USD / Sonnet $0.21 USD (oturum başına).
 
-Kalan %64.5, context compression devreye girene kadar mesajlarınız, Claude'un yanıtları ve tool sonuçları arasında paylaşılır. Context ne kadar doluysa Claude o kadar az doğru çalışır — bu etki **context rot** olarak bilinir.
+Kalan %64.5'i mesajların, Claude'un yanıtları ve tool results paylaşıyor. Context ne kadar dolarsa Claude o kadar yanlış yapıyor — buna **context rot** deniyor.
 
-70.9K nereden geliyor? **Çevrimdışı ölçebildiğimiz** her şeyi içerir — CLAUDE.md'niz, memory'ler, skill'ler, MCP server tanımları, ayarlar, hook'lar, rule'lar, command'lar ve agent'lar — öğe başına tokenize edilmiş. Artı, Claude Code'un her API call'da yüklediği değişmez iskelet için **tahmini sistem overhead'i** (~21K token): system prompt, 23+ yerleşik tool tanımı ve MCP tool schema'ları.
+70.9K'nın kaynağı: offline ölçülebilen tüm config dosyalarının token toplamı + tahmini sistem overhead'i (~21K token) — system prompt, 23+ yerleşik tool tanımı ve MCP tool schemas. Bunlar her API call'da yükleniyor.
 
-Ve bu yalnızca sayabildiğimiz kısım. **Runtime injection'ları** — Claude Code'un oturum sırasında sessizce eklediği token'lar — **dahil değildir**:
+Ama bu sadece **statik** kısım. Şu **runtime injections** dahil değil:
 
-- **Rule re-injection** — tüm rule dosyalarınız her tool call'dan sonra context'e yeniden enjekte edilir. ~30 tool call'dan sonra, yalnızca bu, context window'unuzun ~%46'sını tüketebilir
-- **File change diffs** — okuduğunuz veya yazdığınız bir dosya dışarıdan değiştirildiğinde (ör. bir linter tarafından), tam diff gizli bir system-reminder olarak enjekte edilir
-- **System reminders** — malware uyarıları, token hatırlatmaları ve mesajlara eklenen diğer gizli injection'lar
-- **Conversation history** — mesajlarınız, Claude'un yanıtları ve tüm tool sonuçları her API call'da yeniden gönderilir
+- **Rule re-injection** — tüm rule dosyaların her tool call'dan sonra context'e tekrar enjekte ediliyor. ~30 tool call sonra, tek başına context window'un ~%46'sını yiyebilir
+- **File change diffs** — okuduğun veya yazdığın bir dosya dışarıdan değiştirilirse (ör. linter), tüm diff gizli system-reminder olarak enjekte ediliyor
+- **System reminders** — malware uyarıları, token hatırlatmaları ve diğer gizli injection'lar
+- **Conversation history** — mesajların, Claude'un yanıtları ve tüm tool sonuçları her API call'da tekrar gönderiliyor
 
-Oturum ortasındaki gerçek kullanımınız 70.9K'den önemli ölçüde yüksektir. Sadece göremiyorsunuz.
+Oturum ortasındaki gerçek kullanımın 70.9K'dan çok daha yüksek. Sadece göremiyorsun.
 
-### Sorun 2: Context'iniz kirlenmiş durumda
+### Config'lerin yanlış scope'ta
 
-Claude Code, siz çalışırken sessizce memory, skill, MCP config, command, agent ve rule oluşturur — ve bunları mevcut dizininize uyan scope'a bırakır. Her yerde geçerli olmasını istediğiniz bir tercih? Tek bir projede sıkışır. Tek bir repo'ya ait deploy skill'i? Global'a sızar ve diğer her projeyi kirletir.
+Diğer sorun: Claude Code çalışırken sessizce memory, skill, MCP config, command ve rule oluşturuyor ve bunları o anki dizinine uyan scope'a atıyor.
 
-Global'daki bir Python pipeline skill'i, React frontend oturumunuza yüklenir. Tekrarlanan MCP kayıtları aynı server'ı iki kez başlatır. İki hafta önceki eski memory'ler güncel talimatlarınızla çelişir. Yanlış scope'taki her öğe token harcar **ve** doğruluğu düşürür.
+Sonuç:
+- Her yerde geçerli olması gereken bir tercih tek projede sıkışıyor
+- Tek repo'ya ait deploy skill'i global'a sızıp diğer her şeyi kirletiyor
+- Global'daki Python pipeline skill'i React frontend oturumuna da yükleniyor
+- Tekrarlanan MCP kayıtları aynı server'ı iki kez başlatıyor
+- Eski memory'ler güncel talimatlarınla çelişiyor
 
-Büyük resmi görmenin yolu yok. Tüm scope'lardaki tüm öğeleri, tüm miras zincirini aynı anda gösteren bir komut yok.
+Yanlış scope'taki her öğe token harcıyor **ve** doğruluğu düşürüyor. Üstelik tüm scope'ları bir arada gösteren bir komut yok.
 
-### Çözüm: görsel bir dashboard
+### Çözüm: tek komutla dashboard aç
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-Tek komut. Claude'un sakladığı her şeyi scope hiyerarşisine göre düzenlenmiş halde görün. **Başlamadan önce token bütçenizi görün.** Öğeleri scope'lar arasında sürükleyin. Eski memory'leri silin. Kopyaları bulun. Claude'un davranışını gerçekte neyin etkilediğini kontrol altına alın.
+Claude'un sakladığı her şeyi scope hiyerarşisine göre gör. **Başlamadan önce token bütçeni gör.** Scope'lar arası sürükle, eski memory'leri sil, kopyaları bul.
 
-> **İlk çalıştırma otomatik olarak bir `/cco` skill yükler** — bundan sonra, herhangi bir Claude Code oturumunda `/cco` yazmanız yeterli.
+> **İlk çalıştırma `/cco` skill'i otomatik yükler** — sonra herhangi bir oturumda `/cco` yazman yeterli.
 
-### Örnek: Token'larınızı neyin yediğini bulun
+### Örnek: Token'larını neyin yediğini bul
 
-Dashboard'u açın, **Context Budget**'a tıklayın, **By Tokens**'a geçin — en büyük tüketiciler en üstte. Unuttuğunuz 2.4K token'lık bir CLAUDE.md? Üç scope'ta tekrarlanan bir skill? Artık görüyorsunuz. Temizleyin, context window'un %10-20'sini kurtarın.
+Dashboard'u aç, **Context Budget**'a tıkla, **By Tokens**'a geç — en büyük tüketiciler en üstte. Unuttuğun 2.4K token'lık CLAUDE.md? Üç scope'ta tekrarlanan skill? Artık görüyorsun. Temizle, context window'un %10-20'sini kurtar.
 
-### Örnek: Scope kirliliğini düzeltin
+### Örnek: Scope kirliliğini düzelt
 
-Bir proje içindeyken Claude'a "I prefer TypeScript + ESM" dediniz, ama bu tercih her yerde geçerli. O memory'yi Project'ten Global'a sürükleyin. **Bitti. Tek hareket.** Global'daki bir deploy skill'i gerçekte tek bir repo için mi anlamlı? İlgili Project scope'una sürükleyin — diğer projeler artık görmez.
+Bir proje içinde Claude'a "I prefer TypeScript + ESM" dedin ama bu tercih her yerde geçerli olmalı. O memory'yi Project'ten Global'a sürükle. **Bitti. Tek hareket.** Global'daki deploy skill'i aslında tek bir repo için mi? İlgili Project scope'una sürükle — diğer projeler artık görmez.
 
-### Örnek: Eski memory'leri silmek
+### Örnek: Eski memory'leri sil
 
-Claude bazen gündelik söylediğiniz şeylerden, bazen de *hatırlanmasını istediğinizi sandığı* ayrıntılardan otomatik memory üretir. Bir hafta sonra alakasız hale gelir ama her oturuma yüklenmeye devam eder. Göz atın, okuyun, silin. **Claude'un sizin hakkınızda ne bildiğini sandığını siz belirlersiniz.**
+Claude günlük sohbette söylediğin şeylerden otomatik memory üretiyor. Bir hafta sonra alakası kalmıyor ama her oturumda yüklenmeye devam ediyor. Göz at, oku, sil. **Claude'un senin hakkında ne bildiğini sandığına sen karar verirsin.**
 
 ---
 

@@ -13,60 +13,67 @@
 
 ![Claude Code Organizer Demo](docs/demo.gif)
 
-## vấn đề
+## Vấn đề
 
-Mỗi khi bạn sử dụng Claude Code, hai điều âm thầm xảy ra — và cả hai đều không hiển thị với bạn.
+Bạn có bao giờ để ý không? Mỗi lần mở Claude Code, chưa gõ gì cả mà context window đã mất gần một phần ba rồi.
 
-### Vấn đề 1: Bạn không biết context đã dùng bao nhiêu rồi
+### Token budget cháy trước khi bắt đầu làm việc
 
-Đây là thư mục project thực sau hai tuần sử dụng:
+Claude Code tự động nạp tất cả file cấu hình khi khởi động — CLAUDE.md, memory, skill, MCP server definitions, hooks, rules, v.v. Bạn chưa gõ ký tự nào mà mọi thứ đã nhét hết vào context window.
+
+Đây là project thực sau hai tuần sử dụng:
 
 ![Context Budget](docs/democontextbudged.png)
 
-**Nếu bạn mở một session Claude Code trong thư mục này, 70.9K tokens đã được nạp trước khi bạn bắt đầu cuộc trò chuyện nào.** Đó là 35.4% context window 200K của bạn — biến mất trước khi bạn gõ một ký tự nào. Chi phí ước tính chỉ riêng overhead này: $1.06 USD mỗi session trên Opus, $0.21 trên Sonnet.
+**70.9K tokens — 35.4% context window 200K, biến mất trước khi gõ một ký tự.** Chi phí ước tính chỉ riêng overhead: Opus $1.06 USD / Sonnet $0.21 USD mỗi session.
 
-64.5% còn lại được chia sẻ giữa tin nhắn của bạn, phản hồi của Claude và kết quả tool trước khi context compression bắt đầu. Context càng đầy, Claude càng kém chính xác — hiệu ứng gọi là **context rot**.
+64.5% còn lại phải chia cho tin nhắn, phản hồi của Claude và tool results. Context càng đầy, Claude càng kém chính xác — gọi là **context rot**.
 
-70.9K đến từ đâu? Bao gồm mọi thứ chúng tôi có thể **đo offline** — CLAUDE.md, memory, skill, định nghĩa MCP server, settings, hooks, rules, commands và agents — được tokenize theo từng item. Cộng thêm **system overhead ước tính** (~21K tokens) cho khung cố định mà Claude Code nạp mỗi API call: system prompt, 23+ định nghĩa tool tích hợp và MCP tool schemas.
+70.9K từ đâu ra? Là tổng token của tất cả file config đo offline được, cộng system overhead ước tính (~21K tokens) — system prompt, 23+ tool definitions tích hợp và MCP tool schemas, nạp mỗi API call.
 
-Và đó mới chỉ là phần đếm được. Nó **không bao gồm** **runtime injections** — tokens mà Claude Code âm thầm thêm vào trong session:
+Nhưng đó chỉ là phần **tĩnh**. Những **runtime injections** sau đây chưa tính:
 
-- **Rule re-injection** — tất cả file rule của bạn được tiêm lại vào context sau mỗi tool call. Sau ~30 tool calls, riêng điều này có thể ngốn ~46% context window
-- **File change diffs** — khi file bạn đã đọc hoặc viết bị sửa bên ngoài (ví dụ bởi linter), toàn bộ diff được tiêm vào dưới dạng system-reminder ẩn
-- **System reminders** — cảnh báo malware, nhắc nhở token và các injection ẩn khác được đính kèm vào tin nhắn
-- **Conversation history** — tin nhắn của bạn, phản hồi của Claude và tất cả kết quả tool được gửi lại mỗi API call
+- **Rule re-injection** — tất cả file rule được tiêm lại vào context sau mỗi tool call. Sau ~30 tool calls, riêng cái này ngốn ~46% context window
+- **File change diffs** — file bạn đọc/viết bị sửa bên ngoài (ví dụ linter), toàn bộ diff tiêm vào dạng system-reminder ẩn
+- **System reminders** — cảnh báo malware, nhắc token và các injection ẩn khác
+- **Conversation history** — tin nhắn, phản hồi Claude và tất cả tool results gửi lại mỗi API call
 
-Mức sử dụng thực tế giữa session của bạn cao hơn 70.9K đáng kể. Bạn chỉ không nhìn thấy.
+Mức sử dụng thực giữa session cao hơn 70.9K rất nhiều. Bạn chỉ không thấy.
 
-### Vấn đề 2: Context của bạn bị nhiễm
+### Config nằm sai scope
 
-Claude Code âm thầm tạo memory, skill, config MCP, commands, agents và rules mỗi khi bạn làm việc — rồi đẩy vào scope nào khớp với thư mục hiện tại. Preference muốn áp dụng mọi nơi? Bị kẹt trong một project. Skill deploy chỉ cho một repo? Rò rỉ vào global, làm nhiễm mọi project khác.
+Vấn đề nữa: Claude Code âm thầm tạo memory, skill, MCP config, commands và rules khi bạn làm việc, rồi đẩy vào scope khớp với thư mục hiện tại.
 
-Skill Python pipeline nằm ở global bị nạp vào session React frontend. MCP entry trùng khởi tạo cùng server hai lần. Memory cũ từ hai tuần trước mâu thuẫn với chỉ dẫn hiện tại. Mỗi item sai scope đều tốn token **và** giảm độ chính xác.
+Kết quả:
+- Preference muốn áp dụng mọi nơi bị kẹt trong một project
+- Skill deploy chỉ cho một repo rò rỉ vào global, nhiễm mọi project khác
+- Python pipeline skill ở global bị nạp vào session React frontend
+- MCP entry trùng khởi tạo cùng server hai lần
+- Memory cũ mâu thuẫn với chỉ dẫn hiện tại
 
-Bạn không có cách nào thấy bức tranh toàn cảnh. Không có lệnh nào hiển thị tất cả item ở mọi scope, mọi kế thừa, cùng một lúc.
+Mỗi item sai scope đều tốn token **và** giảm độ chính xác. Và không có lệnh nào cho bạn thấy toàn cảnh mọi scope cùng lúc.
 
-### cách giải quyết: dashboard trực quan
+### Giải pháp: một lệnh, một dashboard
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-Một lệnh duy nhất. Thấy mọi thứ Claude đã lưu — sắp xếp theo cây scope. **Xem token budget trước khi bắt đầu.** Kéo item giữa các scope. Xóa memory cũ. Tìm item trùng. Kiểm soát những gì thực sự ảnh hưởng đến hành vi của Claude.
+Thấy mọi thứ Claude lưu, sắp xếp theo cây scope. **Xem token budget trước khi bắt đầu.** Kéo giữa các scope, xóa memory cũ, tìm item trùng.
 
-> **Lần chạy đầu tiên tự động cài `/cco` skill** — sau đó chỉ cần gõ `/cco` trong bất kỳ session Claude Code nào để mở dashboard.
+> **Lần chạy đầu tự cài `/cco` skill** — sau đó gõ `/cco` trong bất kỳ session nào là mở dashboard.
 
-### Ví dụ: Tìm thứ đang ngốn token của bạn
+### Ví dụ: Tìm thứ đang ngốn token
 
-Mở dashboard, bấm **Context Budget**, chuyển sang **By Tokens** — kẻ tiêu thụ lớn nhất ở trên cùng. CLAUDE.md 2.4K token mà bạn quên? Skill trùng ở ba scope? Giờ bạn thấy rồi. Dọn dẹp, tiết kiệm 10-20% context window.
+Mở dashboard, bấm **Context Budget**, chọn **By Tokens** — kẻ tiêu thụ lớn nhất ở trên. CLAUDE.md 2.4K token bạn quên? Skill trùng ở ba scope? Giờ thấy rồi. Dọn dẹp, tiết kiệm 10-20% context window.
 
-### Ví dụ: Sửa nhiễm scope
+### Ví dụ: Sửa scope bị nhiễm
 
-Bạn nói với Claude "I prefer TypeScript + ESM" khi đang trong một project, nhưng preference đó áp dụng mọi nơi. Kéo memory đó từ Project sang Global. **Xong. Một cú kéo.** Skill deploy ở global nhưng chỉ có ý nghĩa với một repo? Kéo vào scope Project đó — project khác sẽ không thấy nữa.
+Bạn nói với Claude "I prefer TypeScript + ESM" trong một project, nhưng preference này áp dụng mọi nơi. Kéo memory từ Project sang Global. **Xong. Một cú kéo.** Skill deploy ở global nhưng chỉ dùng cho một repo? Kéo vào Project scope đó — project khác không thấy nữa.
 
 ### Ví dụ: Xóa memory cũ
 
-Claude tự tạo memory từ những câu bạn nói vu vơ, hoặc từ những gì nó *nghĩ* là nên nhớ. Một tuần sau không còn liên quan nhưng vẫn bị nạp mọi session. Duyệt, đọc, xóa. **Bạn quyết định Claude nên "biết" gì về mình.**
+Claude tự tạo memory từ những câu bạn nói vu vơ. Một tuần sau không liên quan nhưng vẫn nạp mỗi session. Duyệt, đọc, xóa. **Bạn quyết định Claude nên "biết" gì về mình.**
 
 ---
 

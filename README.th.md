@@ -15,58 +15,65 @@
 
 ## ปัญหา
 
-ทุกครั้งที่คุณใช้ Claude Code มีสองสิ่งที่เกิดขึ้นเงียบ ๆ — และทั้งสองอย่างคุณมองไม่เห็น
+เคยสังเกตไหม? ทุกครั้งที่เปิด Claude Code ก่อนจะพิมพ์อะไรสักตัว context window หายไปเกือบหนึ่งในสามแล้ว
 
-### ปัญหาที่ 1: คุณไม่รู้เลยว่า context ถูกใช้ไปเท่าไหร่แล้ว
+### Token budget หมดก่อนจะเริ่มทำงาน
 
-นี่คือ directory ของ project จริงหลังใช้งานสองสัปดาห์:
+Claude Code โหลด config ทั้งหมดอัตโนมัติตอนเปิด — CLAUDE.md, memories, skills, MCP server definitions, hooks, rules ฯลฯ ยังไม่ทันพิมพ์อะไร ทุกอย่างถูกยัดเข้า context window แล้ว
+
+นี่คือ project จริงหลังใช้งานสองสัปดาห์:
 
 ![Context Budget](docs/democontextbudged.png)
 
-**ถ้าคุณเริ่ม session Claude Code ใน directory นี้ จะมี 70.9K tokens ถูกโหลดไปแล้วก่อนที่คุณจะเริ่มพิมพ์อะไร** นั่นคือ 35.4% ของ context window 200K ของคุณ — หายไปก่อนที่จะพิมพ์แม้แต่ตัวอักษรเดียว ค่าใช้จ่ายโดยประมาณสำหรับ overhead นี้เท่านั้น: $1.06 USD ต่อ session บน Opus, $0.21 บน Sonnet
+**70.9K tokens — 35.4% ของ context window 200K หายไปก่อนพิมพ์แม้แต่ตัวเดียว** ค่าใช้จ่ายโดยประมาณของ overhead นี้: Opus $1.06 USD / Sonnet $0.21 USD ต่อ session
 
-ส่วนที่เหลือ 64.5% ต้องแบ่งกันระหว่างข้อความของคุณ, คำตอบของ Claude และผลลัพธ์ของ tool ก่อนที่ context compression จะเริ่มทำงาน ยิ่ง context เต็มมากเท่าไหร่ Claude ก็ยิ่งไม่แม่นยำ — ปรากฏการณ์ที่เรียกว่า **context rot**
+64.5% ที่เหลือต้องแบ่งกันระหว่างข้อความ, คำตอบของ Claude และ tool results ยิ่ง context เต็มเท่าไหร่ Claude ก็ยิ่งไม่แม่นยำ เรียกว่า **context rot**
 
-70.9K มาจากไหน? รวมทุกอย่างที่เรา**วัดแบบ offline ได้** — CLAUDE.md, memories, skills, คำจำกัดความของ MCP server, settings, hooks, rules, commands และ agents — คำนวณ token ทีละรายการ บวกกับ **system overhead โดยประมาณ** (~21K tokens) สำหรับโครงสร้างคงที่ที่ Claude Code โหลดทุก API call: system prompt, 23+ tool definitions ที่มีมาในตัว และ MCP tool schemas
+70.9K มาจากไหน? คือผลรวม token ของ config files ทั้งหมดที่วัดแบบ offline ได้ บวกกับ system overhead โดยประมาณ (~21K tokens) — system prompt, 23+ tool definitions ในตัว และ MCP tool schemas ที่โหลดทุก API call
 
-และนั่นเป็นแค่ส่วนที่นับได้ มัน**ไม่รวม** **runtime injections** — tokens ที่ Claude Code เพิ่มเข้ามาเงียบ ๆ ระหว่าง session:
+แต่นี่เป็นแค่ส่วน**คงที่** **Runtime injections** ต่อไปนี้ยังไม่ได้นับรวม:
 
-- **Rule re-injection** — ไฟล์ rule ทั้งหมดของคุณถูกฉีดกลับเข้า context หลังทุก tool call หลังจาก ~30 tool calls แค่อันนี้อย่างเดียวก็กิน ~46% ของ context window ได้
-- **File change diffs** — เมื่อไฟล์ที่คุณอ่านหรือเขียนถูกแก้ไขจากภายนอก (เช่น โดย linter) diff ทั้งหมดจะถูกฉีดเข้ามาเป็น system-reminder ที่ซ่อนอยู่
-- **System reminders** — คำเตือน malware, การเตือน token และ injections ที่ซ่อนอยู่อื่น ๆ จะถูกแนบไปกับข้อความ
-- **Conversation history** — ข้อความของคุณ, คำตอบของ Claude และผลลัพธ์ของ tool ทั้งหมดถูกส่งซ้ำทุก API call
+- **Rule re-injection** — rule files ทั้งหมดถูกฉีดกลับเข้า context หลังทุก tool call หลัง ~30 tool calls แค่อันนี้ก็กิน ~46% ของ context window ได้
+- **File change diffs** — ถ้าไฟล์ที่อ่านหรือเขียนถูกแก้จากข้างนอก (เช่น linter) diff ทั้งหมดถูกฉีดเป็น system-reminder ที่ซ่อนอยู่
+- **System reminders** — คำเตือน malware, token reminders และ injections ซ่อนอื่น ๆ
+- **Conversation history** — ข้อความ, คำตอบของ Claude และ tool results ทั้งหมดถูกส่งซ้ำทุก API call
 
-การใช้งานจริงระหว่าง session ของคุณสูงกว่า 70.9K อย่างมาก คุณแค่มองไม่เห็น
+การใช้จริงระหว่าง session สูงกว่า 70.9K มาก แค่มองไม่เห็น
 
-### ปัญหาที่ 2: Context ของคุณถูกปนเปื้อน
+### Config อยู่ผิด scope
 
-Claude Code สร้าง memories, skills, MCP configs, commands, agents และ rules แบบเงียบ ๆ ทุกครั้งที่คุณทำงาน แล้วโยนลง scope ที่ตรงกับ directory ปัจจุบัน สิ่งที่คุณอยากให้มีผลทุกที่? ติดอยู่ใน project เดียว deploy skill ที่ควรอยู่กับ repo เดียว? หลุดไปอยู่ใน global ปนเปื้อนทุก project อื่น
+อีกปัญหาหนึ่ง: Claude Code สร้าง memories, skills, MCP configs, commands และ rules เงียบ ๆ ทุกครั้งที่ทำงาน แล้วโยนลง scope ที่ตรงกับ directory ปัจจุบัน
 
-skill สำหรับ Python pipeline ที่อยู่ใน global ถูกโหลดเข้า session React frontend ของคุณ MCP entry ที่ซ้ำกันทำให้ server เดิมถูก initialize สองครั้ง memory เก่าจากสองสัปดาห์ก่อนขัดกับคำสั่งปัจจุบัน ทุก item ที่อยู่ผิด scope เปลือง token **และ**ลดความแม่นยำ
+ผลลัพธ์:
+- สิ่งที่อยากให้มีผลทุกที่ กลับติดอยู่ใน project เดียว
+- deploy skill ที่ควรอยู่กับ repo เดียว หลุดไป global ปนเปื้อน project อื่น
+- Python pipeline skill ใน global ถูกโหลดเข้า session React frontend
+- MCP entry ซ้ำทำให้ server เดิม initialize สองครั้ง
+- memory เก่าขัดแย้งกับคำสั่งปัจจุบัน
 
-คุณไม่มีทางเห็นภาพรวมทั้งหมด ไม่มีคำสั่งไหนที่แสดงทุก item ครบทุก scope ทุกชั้นการสืบทอด ได้ในทีเดียว
+ทุก item ที่อยู่ผิด scope เปลือง token **และ**ลดความแม่นยำ และไม่มีคำสั่งไหนที่แสดงภาพรวมทุก scope ได้ในทีเดียว
 
-### ทางออก: dashboard ที่เห็นภาพรวม
+### ทางออก: สั่งครั้งเดียวเปิด dashboard
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-สั่งครั้งเดียว เห็นทุกอย่างที่ Claude เก็บไว้ จัดเรียงตาม scope hierarchy **เห็น token budget ก่อนเริ่มทำงาน** ลาก item ข้าม scope ลบ memory เก่า หา item ซ้ำ ควบคุมได้จริงว่าอะไรมีผลต่อพฤติกรรมของ Claude
+เห็นทุกอย่างที่ Claude เก็บไว้ จัดตาม scope hierarchy **เห็น token budget ก่อนเริ่มทำงาน** ลากข้าม scope, ลบ memory เก่า, หา item ซ้ำ
 
-> **รันครั้งแรกจะติดตั้ง `/cco` skill ให้อัตโนมัติ** — หลังจากนั้นแค่พิมพ์ `/cco` ใน session Claude Code ไหนก็ได้เพื่อเปิด dashboard
+> **รันครั้งแรกจะติดตั้ง `/cco` skill อัตโนมัติ** — หลังจากนั้นแค่พิมพ์ `/cco` ใน session ไหนก็ได้
 
-### ตัวอย่าง: หาว่าอะไรกำลังกิน token ของคุณ
+### ตัวอย่าง: หาว่าอะไรกิน token
 
-เปิด dashboard คลิก **Context Budget** สลับไปที่ **By Tokens** — ตัวกิน token ใหญ่สุดอยู่ด้านบน CLAUDE.md ขนาด 2.4K token ที่คุณลืมไป? skill ที่ซ้ำกันในสาม scope? ตอนนี้เห็นแล้ว ทำความสะอาด ประหยัด context window ได้ 10-20%
+เปิด dashboard คลิก **Context Budget** สลับไป **By Tokens** — ตัวกินใหญ่สุดอยู่ด้านบน CLAUDE.md 2.4K token ที่ลืมไป? skill ซ้ำในสาม scope? เห็นแล้ว ทำความสะอาดแล้วประหยัด context window 10-20%
 
-### ตัวอย่าง: แก้ไขการปนเปื้อนของ scope
+### ตัวอย่าง: แก้ scope ปนเปื้อน
 
-คุณบอก Claude ว่า "I prefer TypeScript + ESM" ตอนอยู่ใน project แต่ preference นี้ควรมีผลทุกที่ ลาก memory นั้นจาก Project ไป Global **ลากครั้งเดียวจบ** deploy skill ที่อยู่ใน global แต่จริง ๆ ใช้กับ repo เดียว? ลากไปไว้ใน Project scope นั้น — project อื่นจะไม่เห็นมันอีก
+บอก Claude ว่า "I prefer TypeScript + ESM" ตอนอยู่ใน project แต่ preference นี้ควรมีผลทุกที่ ลาก memory จาก Project ไป Global **ลากครั้งเดียวจบ** deploy skill ใน global ที่จริง ๆ ใช้กับ repo เดียว? ลากไป Project scope นั้น — project อื่นจะไม่เห็นอีก
 
-### ตัวอย่าง: ลบ memory ที่ไม่อัปเดตแล้ว
+### ตัวอย่าง: ลบ memory เก่า
 
-Claude อาจสร้าง memory อัตโนมัติจากสิ่งที่คุณพูดเล่น ๆ หรือจากสิ่งที่มัน*คิดว่า*ควรจำไว้ ผ่านไปสัปดาห์หนึ่งอาจไม่เกี่ยวแล้ว แต่ยังถูกโหลดทุก session เปิดดู อ่าน ลบ **คุณเป็นคนกำหนดว่า Claude ควรรู้อะไรเกี่ยวกับคุณ**
+Claude สร้าง memory อัตโนมัติจากสิ่งที่พูดเล่น ๆ ผ่านไปสัปดาห์ไม่เกี่ยวแล้ว แต่ยังโหลดทุก session เปิดดู อ่าน ลบ **คุณเป็นคนกำหนดว่า Claude ควรรู้อะไรเกี่ยวกับคุณ**
 
 ---
 

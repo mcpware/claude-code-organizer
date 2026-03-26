@@ -13,60 +13,67 @@
 
 ![Claude Code Organizer Demo](docs/demo.gif)
 
-## masalahnya
+## Masalahnya
 
-Setiap kali Anda menggunakan Claude Code, dua hal terjadi secara diam-diam — dan keduanya tidak terlihat oleh Anda.
+Pernah sadar nggak? Setiap kali buka Claude Code, context window kamu sudah kehilangan sepertiga kapasitas bahkan sebelum kamu mengetik apa pun.
 
-### Masalah 1: Anda tidak tahu berapa banyak context yang sudah terpakai
+### Budget token habis duluan sebelum mulai kerja
 
-Ini adalah direktori project nyata setelah dua minggu penggunaan:
+Claude Code otomatis memuat semua file konfigurasi saat startup — CLAUDE.md, memory, skill, definisi MCP server, hooks, rules, dan sebagainya. Belum ketik apa-apa, semuanya sudah masuk context window.
+
+Ini contoh project nyata setelah dua minggu dipakai:
 
 ![Context Budget](docs/democontextbudged.png)
 
-**Jika Anda memulai sesi Claude Code di direktori ini, 70.9K tokens sudah dimuat sebelum Anda memulai percakapan apa pun.** Itu 35.4% dari context window 200K Anda — hilang sebelum Anda mengetik satu karakter pun. Estimasi biaya hanya untuk overhead ini: $1.06 USD per sesi di Opus, $0.21 di Sonnet.
+**70.9K tokens — 35.4% dari context window 200K kamu, hilang sebelum mengetik satu karakter pun.** Estimasi biaya overhead ini saja: Opus $1.06 USD / Sonnet $0.21 USD per session.
 
-Sisa 64.5% dibagi antara pesan Anda, respons Claude, dan hasil tool sebelum context compression dimulai. Semakin penuh context, semakin tidak akurat Claude — efek yang dikenal sebagai **context rot**.
+Sisa 64.5% harus dibagi antara pesan kamu, jawaban Claude, dan tool results. Makin penuh context-nya, makin nggak akurat Claude — ini yang disebut **context rot**.
 
-Dari mana 70.9K berasal? Termasuk semua yang bisa kami **ukur secara offline** — CLAUDE.md, memory, skill, definisi MCP server, settings, hooks, rules, commands, dan agents — di-tokenisasi per item. Ditambah **estimasi system overhead** (~21K tokens) untuk kerangka tetap yang Claude Code muat di setiap API call: system prompt, 23+ definisi tool bawaan, dan MCP tool schemas.
+70.9K itu dari mana? Total token dari semua file config yang bisa diukur offline, ditambah estimasi system overhead (~21K tokens) — system prompt, 23+ definisi tool bawaan, dan MCP tool schemas yang dimuat setiap API call.
 
-Dan itu hanya yang bisa dihitung. Tidak **termasuk** **runtime injections** — token yang Claude Code tambahkan secara diam-diam selama sesi:
+Tapi itu baru bagian **statis**-nya. **Runtime injections** berikut ini belum termasuk sama sekali:
 
-- **Rule re-injection** — semua file rule Anda diinjeksi ulang ke context setelah setiap tool call. Setelah ~30 tool call, ini saja bisa menghabiskan ~46% context window Anda
-- **File change diffs** — ketika file yang Anda baca atau tulis dimodifikasi secara eksternal (misal oleh linter), seluruh diff diinjeksi sebagai system-reminder tersembunyi
-- **System reminders** — peringatan malware, pengingat token, dan injeksi tersembunyi lainnya yang dilampirkan ke pesan
-- **Conversation history** — pesan Anda, respons Claude, dan semua hasil tool dikirim ulang di setiap API call
+- **Rule re-injection** — semua file rule kamu di-inject ulang ke context setelah setiap tool call. Setelah ~30 tool call, ini saja bisa makan ~46% context window
+- **File change diffs** — kalau file yang kamu baca atau tulis diubah dari luar (misal oleh linter), seluruh diff di-inject sebagai system-reminder tersembunyi
+- **System reminders** — peringatan malware, pengingat token, dan injeksi tersembunyi lainnya
+- **Conversation history** — pesan kamu, jawaban Claude, dan semua tool results dikirim ulang di setiap API call
 
-Penggunaan aktual Anda di tengah sesi jauh lebih tinggi dari 70.9K. Anda hanya tidak bisa melihatnya.
+Jadi pemakaian sebenarnya di tengah session jauh lebih tinggi dari 70.9K. Kamu cuma nggak bisa lihat.
 
-### Masalah 2: Context Anda tercemar
+### Konfigurasi nyasar di scope yang salah
 
-Claude Code diam-diam membuat memory, skill, config MCP, commands, agents, dan rules setiap kali Anda bekerja — dan menaruhnya ke scope yang cocok dengan direktori aktif. Preferensi yang seharusnya berlaku di mana-mana? Terkunci di satu project. Skill deploy yang hanya untuk satu repo? Bocor ke global, mencemari setiap project lain.
+Masalah lainnya: Claude Code diam-diam bikin memory, skill, MCP config, commands, dan rules setiap kali kamu kerja, lalu ditaruh di scope yang cocok dengan direktori saat itu.
 
-Skill Python pipeline yang duduk di global ikut dimuat ke sesi frontend React Anda. Entri MCP duplikat menginisialisasi server yang sama dua kali. Memory usang dari dua minggu lalu bertentangan dengan instruksi terbaru Anda. Setiap item yang salah scope membuang token **dan** menurunkan akurasi.
+Hasilnya:
+- Preferensi yang harusnya berlaku di mana-mana, malah terkunci di satu project
+- Skill deploy yang cuma untuk satu repo, bocor ke global dan mencemari semua project lain
+- Skill Python pipeline di global ikut dimuat saat buka session React frontend
+- Entry MCP duplikat bikin server yang sama diinisialisasi dua kali
+- Memory usang bertentangan dengan instruksi terbaru
 
-Anda tidak punya cara untuk melihat gambaran lengkap. Tidak ada command yang menampilkan semua item di semua scope, semua inheritance, sekaligus.
+Setiap item di scope yang salah membuang token **dan** menurunkan akurasi. Dan nggak ada command yang bisa menampilkan semua scope secara lengkap sekaligus.
 
-### solusinya: dashboard visual
+### Solusinya: satu command, satu dashboard
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-Cukup satu command. Semua yang disimpan Claude langsung terlihat — tersusun menurut hierarki scope. **Lihat budget token Anda sebelum mulai.** Pindahkan item antar-scope dengan drag-and-drop. Hapus stale memory. Temukan duplikat. Kendalikan apa yang benar-benar memengaruhi perilaku Claude.
+Lihat semua yang disimpan Claude, tersusun menurut hierarki scope. **Lihat budget token sebelum mulai.** Drag antar-scope, hapus memory usang, temukan duplikat.
 
-> **Saat pertama kali dijalankan, `/cco` skill terinstal otomatis** — setelah itu, cukup ketik `/cco` di sesi Claude Code mana pun untuk membuka dashboard.
+> **Pertama kali dijalankan, `/cco` skill otomatis terinstal** — setelah itu cukup ketik `/cco` di session Claude Code mana pun untuk buka dashboard.
 
-### Contoh: Temukan apa yang menghabiskan token Anda
+### Contoh: Cari apa yang menghabiskan token kamu
 
-Buka dashboard, klik **Context Budget**, beralih ke **By Tokens** — konsumen terbesar ada di atas. CLAUDE.md berukuran 2.4K token yang Anda lupakan? Skill yang terduplikasi di tiga scope? Sekarang terlihat. Bersihkan, hemat 10-20% context window.
+Buka dashboard, klik **Context Budget**, pilih **By Tokens** — konsumen terbesar di atas. CLAUDE.md 2.4K token yang kamu lupa? Skill duplikat di tiga scope? Sekarang kelihatan. Bersihkan, hemat 10-20% context window.
 
-### Contoh: Perbaiki pencemaran scope
+### Contoh: Perbaiki scope yang tercampur
 
-Anda memberitahu Claude "I prefer TypeScript + ESM" saat berada di sebuah project, tapi preferensi itu berlaku di mana-mana. Drag memory tersebut dari Project ke Global. **Selesai. Sekali drag.** Skill deploy di global yang sebenarnya hanya untuk satu repo? Drag ke scope Project itu — project lain tidak akan melihatnya lagi.
+Kamu bilang ke Claude "I prefer TypeScript + ESM" di satu project, padahal preferensi itu berlaku global. Drag memory itu dari Project ke Global. **Selesai. Sekali drag.** Skill deploy di global tapi cuma relevan untuk satu repo? Drag ke Project scope itu — project lain nggak akan lihat lagi.
 
 ### Contoh: Hapus memory usang
 
-Claude membuat memory otomatis dari hal yang Anda ucapkan sambil lalu, atau dari yang *menurutnya* perlu diingat. Seminggu kemudian sudah tidak relevan tapi tetap dimuat di setiap sesi. Jelajahi, baca, hapus. **Anda yang menentukan apa yang Claude anggap ia ketahui tentang Anda.**
+Claude bikin memory otomatis dari hal yang kamu ucapkan sambil lalu. Seminggu kemudian sudah nggak relevan tapi tetap dimuat tiap session. Jelajahi, baca, hapus. **Kamu yang tentukan apa yang Claude anggap dia tahu soal kamu.**
 
 ---
 

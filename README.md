@@ -45,6 +45,8 @@ Your actual mid-session usage is significantly higher than 70.9K. You just can't
 
 Claude Code silently creates memories, skills, MCP configs, commands, agents, and rules every time you work — and dumps them into whatever scope matches your current directory. A preference you wanted everywhere? Trapped in one project. A deploy skill that belongs to one repo? Leaked into global, contaminating every other project.
 
+It also creates duplicate memories without asking. In the screenshot above, you can see three separate memories about Slack updates — "Keep structure in Slack messages", "Slack updates don't always need a specific recipient", and "Always use slack-update skill for reports" — all saying essentially the same thing, each one wasting tokens every session.
+
 A Python pipeline skill sitting in global gets loaded into your React frontend session. Duplicate MCP entries initialize the same server twice. Stale memories from two weeks ago contradict your current instructions. Every wrong-scope item wastes tokens **and** degrades accuracy.
 
 You have no way to see the full picture. No command shows all items across all scopes, all inheritance, all at once.

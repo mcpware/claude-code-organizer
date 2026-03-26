@@ -17,58 +17,65 @@
 
 ## 問題
 
-每次你用 Claude Code 嗰陣，有兩件事會靜靜雞發生 — 而你完全睇唔到。
+你有冇留意到，每次開 Claude Code 嗰陣，其實背後已經靜靜雞食咗好多嘢？
 
-### 問題 1：你根本唔知 context 已經用咗幾多
+### 你嘅 token 預算，開波前已經蝕咗三成
 
-呢個係一個用咗兩個禮拜嘅真實 project 目錄：
+Claude Code 每次啟動，都會先 load 一堆 config — CLAUDE.md、記憶、技能、MCP server 定義、Hook、規則嗰啲。你仲未打字，佢已經全部塞晒入 context window。
+
+呢個係一個用咗兩個禮拜嘅真實 project：
 
 ![Context Budget](docs/democontextbudged.png)
 
-**如果你喺呢個目錄開一個 Claude Code session，喺你開始打字之前已經 load 咗 70.9K tokens。** 即係你 200K context window 嘅 35.4% — 你未打過一隻字就冇咗。每次 session 光係呢啲 overhead 嘅估計成本：Opus $1.06 USD，Sonnet $0.21 USD。
+**70.9K tokens — 你 200K context window 嘅 35.4%，你未開口已經冇咗。** 每次 session 淨係呢啲 overhead 嘅成本：Opus $1.06 USD、Sonnet $0.21 USD。
 
-剩返嗰 64.5% 要同你嘅 message、Claude 嘅回覆同埋 tool results 分享，直到 context compression 啟動。Context 越滿，Claude 越唔準 — 呢個效應叫做 **context rot**。
+剩返嗰 64.5% 要同你嘅對話、Claude 嘅回覆、tool results 搶位，而且 context 越滿 Claude 就越唔準 — 呢個叫 **context rot**。
 
-70.9K 點嚟？佢包括所有我哋可以**離線量度**嘅嘢 — 你嘅 CLAUDE.md、記憶、技能、MCP server 定義、設定、Hook、規則、指令同代理 — 逐項計 token。加埋一個**估計嘅系統 overhead**（~21K tokens），即係 Claude Code 每次 API call 都會 load 嘅固定架構：system prompt、23+ 個內建 tool 定義同 MCP tool schemas。
+70.9K 點嚟？包括我哋可以離線量度嘅所有 config 檔案，加埋一個估計嘅系統 overhead（~21K tokens）— 即係 system prompt、23+ 個內建 tool 定義同 MCP tool schemas，每次 API call 都會 load。
 
-而呢個仲只係數到嘅部分。佢**唔包括** **runtime injections** — Claude Code 喺 session 期間靜靜雞加入嘅 tokens：
+但呢個仲只係**靜態**部分。以下呢啲 **runtime injections** 完全冇計埋：
 
-- **Rule re-injection** — 你所有嘅 rule 檔案喺每次 tool call 之後都會重新注入 context。大約 ~30 次 tool call 之後，單係呢樣就可以食咗你 ~46% 嘅 context window
-- **File change diffs** — 當你讀過或者寫過嘅檔案俾外部修改（例如 linter），成個 diff 會以隱藏嘅 system-reminder 注入
-- **System reminders** — malware 警告、token 提醒同其他隱藏嘅 injections 會附加喺 messages 後面
-- **Conversation history** — 你嘅 messages、Claude 嘅回覆同所有 tool results 喺每次 API call 都會重新發送
+- **Rule re-injection** — 你所有 rule 檔案喺每次 tool call 之後都會重新注入。大約 30 次 tool call 之後，單係呢樣就食咗 ~46% context window
+- **File change diffs** — 你讀過或者寫過嘅檔案俾外部改咗（例如 linter），成個 diff 會以隱藏嘅 system-reminder 注入
+- **System reminders** — malware 警告、token 提醒同其他隱藏嘅 injections
+- **Conversation history** — 你嘅 messages、Claude 嘅回覆同所有 tool results 每次 API call 都重新發送
 
-你 session 中途嘅實際用量遠遠高過 70.9K。你只係睇唔到。
+所以你 session 做到一半嘅實際用量，遠遠超過 70.9K。你只係睇唔到。
 
-### 問題 2：你嘅 context 被污染咗
+### 你嘅 config 擺錯晒位
 
-Claude Code 每次你做嘢嗰陣都會靜靜雞幫你 create 記憶、技能、MCP config、指令、代理同規則 — 然後就 dump 落你當時所在嘅 scope。你想全域都生效嘅偏好設定？困死咗喺一個 project 入面。一個只係屬於某個 repo 嘅 deploy 技能？漏咗去 global，污染埋你其他 project。
+另一個問題：Claude Code 每次做嘢都會靜靜雞幫你 create 記憶、技能、MCP config、指令同規則，然後就 dump 落你當時所在嘅 scope。
 
-一個 Python pipeline 技能坐咗喺 global，結果每次你開 React frontend session 都俾佢 load 埋。重複嘅 MCP entry 會初始化同一個 server 兩次。過期嘅記憶同你而家嘅指示互相矛盾。每一個擺錯位嘅項目都嘥 token **仲**降低準確度。
+結果就係：
+- 你想全域生效嘅偏好，困死咗喺一個 project 入面
+- 一個只屬於某個 repo 嘅 deploy 技能，漏咗去 global，污染埋其他 project
+- Python pipeline 技能坐喺 global，你開 React session 都俾佢 load 埋
+- 重複嘅 MCP entry 令同一個 server 初始化兩次
+- 過期嘅記憶同你而家嘅指示互相矛盾
 
-你冇辦法睇到成個全貌。冇任何一條 command 可以一次過顯示晒所有 scope、所有項目、所有繼承關係。
+每一個擺錯位嘅項目都嘥 token **仲**降低準確度。而你冇任何 command 可以一次過睇晒所有 scope 嘅全貌。
 
-### 解決方法：視覺化儀表板
+### 搞掂佢：一條 command 開儀表板
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-一條 command。睇晒 Claude 儲咗啲乜 — 按 scope 層級排好。**開始之前就睇到你嘅 token 預算。** 拖拉搬 scope。刪過期記憶。搵重複項目。掌控 Claude 嘅行為設定。
+睇晒 Claude 儲咗啲乜，按 scope 層級排好。**開波之前就知你嘅 token 預算。** 拖拉搬 scope、刪過期記憶、搵重複項目。
 
 > **首次運行會自動安裝 `/cco` skill** — 之後喺任何 Claude Code session 入面打 `/cco` 就可以開儀表板。
 
 ### 例子：搵出邊啲嘢食緊你嘅 tokens
 
-開儀表板，撳 **Context Budget**，切換去 **By Tokens** — 最大嘅消耗者會排喺最上面。一個你忘記咗嘅 2.4K token CLAUDE.md？一個喺三個 scope 都重複嘅技能？而家你睇到喇。清理佢，慳返 10-20% context window。
+開儀表板，撳 **Context Budget**，切換去 **By Tokens** — 最大嘅消耗者排喺最上面。一個你忘記咗嘅 2.4K token CLAUDE.md？一個喺三個 scope 都重複嘅技能？而家你睇到喇。清理佢，慳返 10-20% context window。
 
 ### 例子：修復 scope 污染
 
-你喺一個 project 入面同 Claude 講「我鍾意 TypeScript + ESM」，但呢個偏好你想全域生效。將嗰條記憶由 Project 拖去 Global。**搞掂。拖一下。** 一個 deploy 技能坐咗喺 global 但其實得一個 repo 用得到？拖佢入去嗰個 Project scope — 其他 project 就再見唔到佢。
+你喺一個 project 入面同 Claude 講「我鍾意 TypeScript + ESM」，但其實你想全域生效。將嗰條記憶由 Project 拖去 Global。**搞掂，拖一下。** 一個 deploy 技能坐咗喺 global 但其實得一個 repo 用到？拖佢入去嗰個 Project scope — 其他 project 即刻睇唔到。
 
 ### 例子：刪過期記憶
 
-Claude 會自動記住你隨口講嘅嘢，或者佢*以為*你想記住嘅嘢。一個禮拜之後已經冇用但仲係每次 session 都 load。瀏覽、閱讀、刪除。**你話事 Claude 以為自己知道你啲乜。**
+Claude 會自動記住你隨口講嘅嘢，一個禮拜之後已經冇用但仲係每次 session 都 load。瀏覽、閱讀、刪除。**你話事 Claude 以為自己知道你啲乜。**
 
 ---
 

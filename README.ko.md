@@ -12,58 +12,65 @@
 
 ## 문제
 
-Claude Code를 사용할 때마다 두 가지 일이 조용히 발생합니다 — 그리고 둘 다 여러분에게는 보이지 않습니다.
+혹시 느낀 적 있나요? Claude Code 세션을 시작하면, 아무것도 하기 전에 이미 context window가 꽤 많이 차 있다는 걸.
 
-### 문제 1: context가 이미 얼마나 사용됐는지 모른다
+### Token 예산: 대화 시작 전에 이미 3분의 1이 사라져 있어요
 
-2주간 사용한 실제 프로젝트 디렉토리입니다:
+Claude Code는 시작할 때 설정 파일들을 자동으로 미리 로드합니다 — CLAUDE.md, 메모리, 스킬, MCP server 정의, hooks, rules 등등. 아무것도 입력하지 않았는데 이것들이 전부 context window에 들어갑니다.
+
+2주간 사용한 실제 프로젝트를 보세요:
 
 ![Context Budget](docs/democontextbudged.png)
 
-**이 디렉토리에서 Claude Code 세션을 시작하면, 대화를 시작하기도 전에 이미 70.9K tokens이 로드되어 있습니다.** 200K context window의 35.4%가 한 글자도 입력하기 전에 사라지는 셈입니다. 이 오버헤드만의 추정 비용: Opus에서 세션당 $1.06 USD, Sonnet에서 $0.21 USD.
+**70.9K tokens — 200K context window의 35.4%가 한 글자도 치기 전에 사라집니다.** 이 overhead만의 비용: Opus $1.06 USD / Sonnet $0.21 USD (세션당).
 
-나머지 64.5%는 여러분의 메시지, Claude의 응답, tool results가 공유하며, context compression이 시작될 때까지 사용됩니다. Context가 가득 찰수록 Claude는 덜 정확해집니다 — **context rot**이라고 알려진 현상입니다.
+남은 64.5%는 대화, Claude 응답, tool results가 나눠 쓰게 됩니다. Context가 차면 찰수록 Claude 정확도가 떨어지는데, 이걸 **context rot**이라고 해요.
 
-70.9K는 어디서 오는 걸까요? **오프라인으로 측정 가능한** 모든 것을 포함합니다 — CLAUDE.md, 메모리, 스킬, MCP server 정의, 설정, hooks, rules, commands, agents — 항목별 토큰화. 여기에 **추정 시스템 오버헤드**(~21K tokens) — Claude Code가 매번 API call에서 로드하는 불변 기반: system prompt, 23+ 개의 내장 tool 정의, MCP tool schemas.
+70.9K의 구성: 오프라인에서 측정 가능한 모든 config 파일의 token 합계 + 추정 시스템 overhead (~21K tokens). 시스템 overhead는 system prompt, 23+ 개 내장 tool 정의, MCP tool schemas로 매번 API call에서 로드돼요.
 
-그리고 이건 셀 수 있는 것들만입니다. **runtime injections** — Claude Code가 세션 중에 조용히 추가하는 tokens — 은 **포함되지 않습니다**:
+그런데 이건 **정적인** 부분만이에요. 아래 **runtime injections**은 포함되지 않았습니다:
 
-- **Rule re-injection** — 모든 rule 파일이 매번 tool call 후에 context에 재주입됩니다. ~30번의 tool call 후, 이것만으로 context window의 ~46%를 소비할 수 있습니다
-- **File change diffs** — 읽거나 쓴 파일이 외부에서 수정되면 (예: linter), 전체 diff가 숨겨진 system-reminder로 주입됩니다
-- **System reminders** — 맬웨어 경고, token 알림, 기타 숨겨진 injections이 메시지에 추가됩니다
-- **Conversation history** — 여러분의 메시지, Claude의 응답, 모든 tool results가 매번 API call에서 재전송됩니다
+- **Rule re-injection** — 모든 rule 파일이 tool call마다 context에 재주입됩니다. ~30번 tool call 후, 이것만으로 context window의 ~46%를 차지할 수 있어요
+- **File change diffs** — 읽거나 쓴 파일이 외부에서 수정되면 (예: linter), 전체 diff가 숨겨진 system-reminder로 주입돼요
+- **System reminders** — 맬웨어 경고, token 알림 등 숨겨진 injections
+- **Conversation history** — 메시지, Claude 응답, 모든 tool results가 매 API call마다 재전송
 
-세션 중반의 실제 사용량은 70.9K보다 훨씬 높습니다. 단지 보이지 않을 뿐입니다.
+세션 중반의 실제 사용량은 70.9K보다 훨씬 높아요. 그냥 안 보일 뿐이에요.
 
-### 문제 2: context가 오염되어 있다
+### 설정이 엉뚱한 scope에 흩어져 있어요
 
-Claude Code는 작업할 때마다 조용히 메모리, 스킬, MCP config, commands, agents, rules를 생성하고, 현재 디렉토리에 맞는 scope에 넣어버립니다. 모든 곳에서 적용되길 원하는 설정? 하나의 프로젝트에 갇힙니다. 하나의 레포만을 위한 배포 스킬? 글로벌에 새어 나와 모든 다른 프로젝트를 오염시킵니다.
+또 하나의 문제: Claude Code는 작업하면서 메모리, 스킬, MCP config, commands, rules를 조용히 만들고, 현재 디렉토리에 맞는 scope에 넣어버려요.
 
-글로벌에 있는 Python pipeline 스킬이 React frontend 세션에서도 로드됩니다. 중복된 MCP 항목이 같은 서버를 두 번 초기화합니다. 2주 전의 오래된 메모리가 현재 지시와 모순됩니다. scope가 잘못된 모든 항목은 token을 낭비하고 **게다가** 정확도도 떨어뜨립니다.
+그 결과:
+- 모든 곳에서 쓰고 싶은 설정이 하나의 프로젝트에 갇힘
+- 하나의 레포 전용 배포 스킬이 global로 새서 다른 프로젝트 전부 오염
+- Global의 Python pipeline 스킬이 React frontend 세션에도 로드됨
+- 중복 MCP entry가 같은 서버를 두 번 초기화
+- 오래된 메모리가 현재 지시와 모순
 
-전체 그림을 볼 방법이 없습니다. 모든 scope, 모든 항목, 모든 상속을 한 번에 보여주는 명령어는 없습니다.
+잘못된 scope의 항목마다 token을 낭비하고 **게다가** 정확도도 떨어뜨려요. 그런데 모든 scope를 한눈에 보여주는 명령어는 없습니다.
 
-### 해결책: 비주얼 대시보드
+### 해결: 명령어 하나로 대시보드 열기
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-명령어 하나. Claude가 저장한 모든 것을 scope 계층별로 정리해서 봅니다. **시작하기 전에 token 예산을 확인합니다.** scope 간에 항목을 드래그합니다. 오래된 메모리를 삭제합니다. 중복을 찾습니다. Claude의 동작에 실제로 영향을 미치는 것을 제어합니다.
+Claude가 저장한 모든 걸 scope 계층별로 정리해서 보여줘요. **시작 전에 token 예산을 확인하세요.** 드래그로 scope 간 이동, 오래된 메모리 삭제, 중복 찾기.
 
-> **첫 실행 시 `/cco` skill이 자동 설치** — 이후 어떤 Claude Code 세션에서든 `/cco`를 입력하면 대시보드가 열립니다.
+> **첫 실행 시 `/cco` skill 자동 설치** — 이후 아무 세션에서나 `/cco` 입력하면 대시보드가 열려요.
 
-### 예시: token을 잡아먹는 것 찾기
+### 예시: token 잡아먹는 놈 찾기
 
-대시보드를 열고, **Context Budget**을 클릭, **By Tokens**로 전환 — 가장 큰 소비자가 맨 위에 옵니다. 잊고 있던 2.4K token CLAUDE.md? 세 개의 scope에 중복된 스킬? 이제 보입니다. 정리하면 context window의 10-20%를 절약할 수 있습니다.
+대시보드를 열고 **Context Budget** → **By Tokens**로 전환. 가장 큰 소비자가 맨 위에 와요. 잊고 있던 2.4K token CLAUDE.md? 세 scope에 중복된 스킬? 정리하면 context window 10-20% 절약 가능.
 
 ### 예시: scope 오염 수정
 
-프로젝트 안에서 Claude에게 "TypeScript + ESM 선호"라고 했지만, 이 설정은 모든 곳에서 적용돼야 합니다. 그 메모리를 Project에서 Global로 드래그. **끝. 한 번 드래그.** 글로벌에 있는 배포 스킬이 실제로는 하나의 레포에서만 쓴다면? 해당 Project scope로 드래그 — 다른 프로젝트에서는 더 이상 보이지 않습니다.
+프로젝트에서 Claude에게 "TypeScript + ESM 선호"라고 했는데, 이건 모든 곳에 적용돼야 하는 설정이에요. 그 메모리를 Project에서 Global로 드래그. **끝. 한 번 드래그.** Global에 있는 배포 스킬이 실제로는 하나의 레포에서만 쓰인다면? 해당 Project scope로 드래그하면 다른 프로젝트에서 안 보여요.
 
 ### 예시: 오래된 메모리 삭제
 
-Claude는 여러분이 대수롭지 않게 한 말이나, *기억해야 한다고 생각한* 것들로부터 자동으로 메모리를 만듭니다. 일주일 후에는 관련 없지만 여전히 매 세션마다 로드됩니다. 둘러보고, 읽고, 삭제. **Claude가 여러분에 대해 무엇을 알고 있다고 생각하는지, 여러분이 결정합니다.**
+Claude는 대수롭지 않게 한 말에서도 자동으로 메모리를 만들어요. 일주일 후엔 쓸모없는데 매 세션 로드됨. 둘러보고, 읽고, 삭제. **Claude가 나에 대해 뭘 안다고 생각하는지, 내가 정합니다.**
 
 ---
 

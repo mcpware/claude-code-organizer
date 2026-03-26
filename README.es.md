@@ -15,58 +15,65 @@
 
 ## El problema
 
-Cada vez que usas Claude Code, dos cosas ocurren en silencio — y ninguna de las dos es visible para ti.
+¿Te has dado cuenta de que cada vez que abres Claude Code, antes de escribir nada, tu context window ya perdió un tercio de su capacidad?
 
-### Problema 1: No tienes idea de cuánto context ya está usado
+### Tu presupuesto de tokens ya se fue antes de empezar
 
-Este es un directorio de proyecto real después de dos semanas de uso:
+Claude Code precarga automáticamente todos los archivos de configuración al iniciar — CLAUDE.md, memories, skills, definiciones de MCP servers, hooks, rules, etc. No escribiste nada y todo eso ya está metido en la context window.
+
+Mira un proyecto real después de dos semanas de uso:
 
 ![Context Budget](docs/democontextbudged.png)
 
-**Si inicias una sesión de Claude Code en este directorio, ya se han cargado 70.9K tokens antes de que empieces cualquier conversación.** Eso es el 35.4% de tu context window de 200K — desaparecido antes de que escribas un solo carácter. El coste estimado solo de este overhead: $1.06 USD por sesión en Opus, $0.21 en Sonnet.
+**70.9K tokens — el 35.4% de tu context window de 200K, desaparecido antes de que escribas un solo carácter.** Costo estimado solo de este overhead: Opus $1.06 USD / Sonnet $0.21 USD por sesión.
 
-El 64.5% restante se comparte entre tus mensajes, las respuestas de Claude y los resultados de herramientas antes de que se active la compresión de contexto. Cuanto más lleno esté el contexto, menos preciso se vuelve Claude — un efecto conocido como **context rot**.
+El 64.5% restante se lo reparten tus mensajes, las respuestas de Claude y los tool results. Cuanto más lleno el contexto, menos preciso es Claude — el famoso **context rot**.
 
-¿De dónde salen los 70.9K? Incluye todo lo que podemos **medir offline** — tu CLAUDE.md, memories, skills, definiciones de MCP servers, settings, hooks, rules, commands y agents — tokenizado por elemento. Más un **overhead de sistema estimado** (~21K tokens) por la estructura inmutable que Claude Code carga en cada API call: el system prompt, 23+ tool definitions integradas y MCP tool schemas.
+¿De dónde salen los 70.9K? Es la suma de tokens de todos los archivos de config medibles offline, más un overhead de sistema estimado (~21K tokens) — system prompt, 23+ tool definitions integradas y MCP tool schemas, que se cargan en cada API call.
 
-Y eso es solo lo que podemos contar. **No** incluye **runtime injections** — tokens que Claude Code añade silenciosamente durante la sesión:
+Pero eso es solo la parte **estática**. Estas **runtime injections** no están incluidas:
 
 - **Rule re-injection** — todos tus archivos de rules se reinyectan en el contexto después de cada tool call. Tras ~30 tool calls, solo esto puede consumir ~46% de tu context window
-- **File change diffs** — cuando un archivo que leíste o escribiste se modifica externamente (ej. por un linter), el diff completo se inyecta como un system-reminder oculto
-- **System reminders** — avisos de malware, recordatorios de tokens y otras inyecciones ocultas se adjuntan a los mensajes
-- **Conversation history** — tus mensajes, las respuestas de Claude y todos los resultados de herramientas se reenvían en cada API call
+- **File change diffs** — cuando un archivo que leíste o escribiste se modifica externamente (ej. un linter), el diff completo se inyecta como system-reminder oculto
+- **System reminders** — avisos de malware, recordatorios de tokens y otras inyecciones ocultas
+- **Conversation history** — tus mensajes, las respuestas de Claude y todos los tool results se reenvían en cada API call
 
-Tu uso real a mitad de sesión es significativamente mayor que 70.9K. Simplemente no puedes verlo.
+Tu uso real a mitad de sesión es mucho mayor que 70.9K. Simplemente no lo ves.
 
-### Problema 2: Tu context está contaminado
+### Tu configuración está en el scope equivocado
 
-Claude Code crea silenciosamente memories, skills, configs de MCP, commands, agents y rules cada vez que trabajas — y los vuelca en el scope que coincida con tu directorio actual. ¿Una preferencia que querías en todas partes? Encerrada en un solo proyecto. ¿Un deploy skill que solo tiene sentido para un repo? Se filtra a global, contaminando todos los demás proyectos.
+El otro problema: Claude Code crea silenciosamente memories, skills, MCP configs, commands y rules mientras trabajas, y los mete en el scope que corresponda a tu directorio actual.
 
-Un skill de pipeline en Python en global se carga en tu sesión de frontend React. Entradas MCP duplicadas inicializan el mismo servidor dos veces. Memories obsoletas de hace dos semanas contradicen tus instrucciones actuales. Cada elemento en el scope equivocado desperdicia tokens **y** degrada la precisión.
+El resultado:
+- Una preferencia que querías global queda encerrada en un proyecto
+- Un deploy skill de un solo repo se filtra a global y contamina todo lo demás
+- Un skill de Python pipeline en global se carga en tu sesión React frontend
+- Entradas MCP duplicadas inicializan el mismo servidor dos veces
+- Memories obsoletas contradicen tus instrucciones actuales
 
-No tienes manera de ver la imagen completa. Ningún comando muestra todos los elementos de todos los scopes, toda la herencia, todo a la vez.
+Cada elemento en el scope equivocado desperdicia tokens **y** degrada la precisión. Y no existe ningún comando que te muestre el panorama completo de todos los scopes.
 
-### La solución: un dashboard visual
+### La solución: un comando, un dashboard
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-Un solo comando. Ves todo lo que Claude tiene guardado — organizado por jerarquía de scopes. **Ve tu presupuesto de tokens antes de empezar.** Arrastra elementos entre scopes. Borra memories obsoletas. Encuentra duplicados. Toma el control de lo que de verdad influye en el comportamiento de Claude.
+Ve todo lo que Claude tiene guardado, organizado por jerarquía de scopes. **Ve tu presupuesto de tokens antes de empezar.** Arrastra entre scopes, borra memories obsoletas, encuentra duplicados.
 
-> **La primera ejecución auto-instala un `/cco` skill** — después, solo escribe `/cco` en cualquier sesión de Claude Code para abrir el dashboard.
+> **La primera ejecución auto-instala un `/cco` skill** — después, escribe `/cco` en cualquier sesión de Claude Code para abrir el dashboard.
 
 ### Ejemplo: Encuentra qué se está comiendo tus tokens
 
-Abre el dashboard, haz clic en **Context Budget**, cambia a **By Tokens** — los mayores consumidores aparecen arriba. ¿Un CLAUDE.md de 2.4K tokens que olvidaste? ¿Un skill duplicado en tres scopes? Ahora lo ves. Límpialo y ahorra 10-20% de tu context window.
+Abre el dashboard, haz clic en **Context Budget**, cambia a **By Tokens** — los mayores consumidores arriba. ¿Un CLAUDE.md de 2.4K tokens que olvidaste? ¿Un skill duplicado en tres scopes? Ahora lo ves. Limpia y ahorra 10-20% de tu context window.
 
 ### Ejemplo: Corrige la contaminación de scopes
 
-Le dijiste a Claude "I prefer TypeScript + ESM" dentro de un proyecto, pero esa preferencia aplica en todas partes. Arrastra esa memory de Project a Global. **Hecho. Un arrastre.** ¿Un deploy skill en global que solo tiene sentido para un repo? Arrástralo al scope Project correspondiente — los demás proyectos dejarán de verlo.
+Le dijiste a Claude "I prefer TypeScript + ESM" dentro de un proyecto, pero esa preferencia debería ser global. Arrastra esa memory de Project a Global. **Listo. Un arrastre.** ¿Un deploy skill en global que solo sirve para un repo? Arrástralo al Project scope correspondiente — los demás proyectos dejan de verlo.
 
 ### Ejemplo: Borrar memories obsoletas
 
-Claude crea memories automáticamente a partir de cosas que dijiste al pasar, o de cosas que *creyó* que querías conservar. Una semana después ya no importan, pero siguen cargándose en cada sesión. Navega, lee y borra. **Tú decides qué cree Claude que sabe de ti.**
+Claude crea memories automáticamente a partir de cosas que dijiste al pasar. Una semana después ya no sirven pero siguen cargándose en cada sesión. Navega, lee, borra. **Tú decides qué cree Claude que sabe de ti.**
 
 ---
 

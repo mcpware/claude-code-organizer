@@ -18,58 +18,65 @@
 
 ## 問題
 
-每次你使用 Claude Code 時，有兩件事會默默發生 — 而你完全看不到。
+你有沒有想過，每次啟動 Claude Code 的時候，還沒開始對話，你的 context window 就已經少了三分之一？
 
-### 問題 1：你根本不知道 context 已經用了多少
+### Token 預算：開始之前就被吃掉了
 
-這是一個使用兩週後的真實 project 目錄：
+Claude Code 啟動時會自動預載所有設定檔 — CLAUDE.md、記憶、skills、MCP server 定義、hooks、rules 等等。你還沒打字，這些東西就已經全部塞進 context window。
+
+這是一個用了兩週的真實 project：
 
 ![Context Budget](docs/democontextbudged.png)
 
-**如果你在這個目錄下啟動 Claude Code session，在你開始對話之前就已經載入了 70.9K tokens。** 也就是你 200K context window 的 35.4% — 你還沒輸入一個字就沒了。光是這些 overhead 的估計成本：Opus 每個 session $1.06 USD，Sonnet $0.21 USD。
+**70.9K tokens — 佔你 200K context window 的 35.4%，還沒輸入一個字就沒了。** 每個 session 光是這些 overhead 的成本：Opus $1.06 USD，Sonnet $0.21 USD。
 
-剩下的 64.5% 要和你的訊息、Claude 的回覆以及 tool results 共享，直到 context compression 啟動。Context 越滿，Claude 越不準 — 這個效應叫做 **context rot**。
+剩下的 64.5% 要跟你的對話、Claude 的回覆、tool results 共用空間。Context 越滿，Claude 越不準確 — 這就是所謂的 **context rot**。
 
-70.9K 從哪來？它包括所有我們可以**離線測量**的內容 — 你的 CLAUDE.md、記憶、skills、MCP server 定義、設定、hooks、rules、commands 和 agents — 逐項計算 token。再加上一個**估算的系統 overhead**（~21K tokens），也就是 Claude Code 每次 API call 都會載入的固定架構：system prompt、23+ 個內建 tool 定義和 MCP tool schemas。
+70.9K 怎麼來的？就是所有能離線測量的 config 檔案 token 加總，再加上估算的系統 overhead（~21K tokens）— system prompt、23+ 個內建 tool 定義、MCP tool schemas，每次 API call 都會載入。
 
-而這還只是數得到的部分。它**不包括** **runtime injections** — Claude Code 在 session 期間默默加入的 tokens：
+但這還只是**靜態**的部分。以下這些 **runtime injections** 完全沒有算進去：
 
-- **Rule re-injection** — 你所有的 rule 檔案在每次 tool call 之後都會被重新注入 context。大約 ~30 次 tool call 之後，光是這一項就能佔掉你 ~46% 的 context window
-- **File change diffs** — 當你讀過或寫過的檔案被外部修改（例如 linter），完整的 diff 會作為隱藏的 system-reminder 注入
-- **System reminders** — malware 警告、token 提醒和其他隱藏的 injections 會附加在訊息後面
-- **Conversation history** — 你的訊息、Claude 的回覆和所有 tool results 在每次 API call 時都會被重新發送
+- **Rule re-injection** — 所有 rule 檔案在每次 tool call 之後都會重新注入 context。大約 30 次 tool call 之後，光這一項就能佔掉 ~46% context window
+- **File change diffs** — 你讀過或寫過的檔案被外部修改（例如 linter），整個 diff 會作為隱藏的 system-reminder 注入
+- **System reminders** — malware 警告、token 提醒等隱藏 injections
+- **Conversation history** — 你的訊息、Claude 的回覆和所有 tool results 每次 API call 都會重新發送
 
-你在 session 中途的實際用量遠遠高於 70.9K。你只是看不到。
+所以 session 進行到一半時，實際用量遠超 70.9K。你只是看不到。
 
-### 問題 2：你的 context 被污染了
+### Config 散落在錯誤的 scope
 
-Claude Code 每次你工作時，都會默默建立記憶、skills、MCP configs、commands、agents 和 rules，然後把它們丟進符合你目前目錄的那個 scope。你希望到處都生效的偏好？被困在某個 project 裡。只屬於單一 repo 的 deploy skill？卻跑到 global，污染其他所有 project。
+另一個問題：Claude Code 工作時會默默建立記憶、skills、MCP configs、commands 和 rules，然後丟進當前目錄對應的 scope。
 
-放在 global 的 Python pipeline skill，會在你的 React frontend session 裡一起被載入。重複的 MCP entries 會讓同一個 server 初始化兩次。過時的記憶和你現在的指示互相矛盾。每一個放錯 scope 的項目都在浪費 tokens **並且**降低準確度。
+結果就是：
+- 你希望到處都生效的偏好，被困在某個 project 裡
+- 只屬於單一 repo 的 deploy skill，跑到 global 去，污染其他所有 project
+- Global 的 Python pipeline skill，在你開 React frontend session 時一起被載入
+- 重複的 MCP entries 讓同一個 server 初始化兩次
+- 過時的記憶和現在的指示互相矛盾
 
-你沒有辦法看到完整的全貌。沒有任何一條 command 可以一次把所有 scopes、所有 items、所有 inheritance 全部攤開。
+每一個放錯位置的項目都在浪費 tokens **並且**降低準確度。而且沒有任何一條 command 可以一次看清所有 scope 的全貌。
 
-### 解法：visual dashboard
+### 解法：一個 command 開 dashboard
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-只要一個 command。你可以看到 Claude 儲存的所有內容，而且會依 scope hierarchy 排好。**開始之前就看到你的 token 預算。** 把 items 在不同 scopes 之間直接拖放。刪掉過時的記憶。找出重複項目。重新掌握真正會影響 Claude 行為的設定。
+看到 Claude 存了什麼，按 scope hierarchy 排好。**開始之前就看到你的 token 預算。** 拖拉搬移 scope、刪過時記憶、找重複項目。
 
-> **首次執行會自動安裝 `/cco` skill**，之後在任何 Claude Code session 只要輸入 `/cco` 就能打開 dashboard，不必再記 `npx` command。
+> **首次執行會自動安裝 `/cco` skill** — 之後在任何 Claude Code session 輸入 `/cco` 就能打開 dashboard。
 
-### 範例：找出什麼在吃掉你的 tokens
+### 範例：找出什麼在吃 tokens
 
-打開 dashboard，點選 **Context Budget**，切換到 **By Tokens** — 最大的消耗者會排在最上面。一個你忘了的 2.4K token CLAUDE.md？一個在三個 scopes 都重複的 skill？現在你看到了。清理它，省下 10-20% 的 context window。
+打開 dashboard，點 **Context Budget**，切換到 **By Tokens** — 最大的消耗者排最上面。一個你忘了的 2.4K token CLAUDE.md？一個在三個 scope 都重複的 skill？現在看到了。清理掉，省下 10-20% context window。
 
 ### 範例：修復 scope 污染
 
-你在某個 project 裡告訴 Claude「我偏好 TypeScript + ESM」，但這個偏好其實應該套用到所有地方。把那條記憶從 Project 拖到 Global。**完成。只要拖一次。** 放在 global 的 deploy skill 其實只對某個 repo 有意義？把它拖進那個 Project scope — 其他 projects 就不會再看到它。
+你在某個 project 裡告訴 Claude「我偏好 TypeScript + ESM」，但這個偏好應該全域生效。把那條記憶從 Project 拖到 Global。**完成，拖一下。** Deploy skill 放在 global 但其實只有一個 repo 用到？拖進那個 Project scope — 其他 project 就不會再看到它。
 
 ### 範例：刪除過時記憶
 
-Claude 會自動把你隨口提過的事，或它*以為*你希望記住的事，存成記憶。一週後它們可能早就不重要了，卻仍然會在每次 session 載入。瀏覽、閱讀、刪除。**Claude 以為自己知道你什麼，應該由你決定。**
+Claude 會自動記住你隨口說的話。一週後已經沒用了，卻仍然每次 session 都載入。瀏覽、閱讀、刪除。**Claude 以為自己知道你什麼，應該由你決定。**
 
 ---
 

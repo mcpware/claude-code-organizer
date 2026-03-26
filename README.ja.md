@@ -12,58 +12,65 @@
 
 ## 問題
 
-Claude Code を使うたびに、2つのことが静かに起きている — そしてどちらもあなたには見えない。
+Claude Code を使っていて、気づいたことはありますか？セッションを始める前に、context window はすでにかなり埋まっています。
 
-### 問題 1：context がすでにどれだけ使われているか分からない
+### token 予算：会話を始める前に3割消えている
 
-これは2週間使った実際のプロジェクトディレクトリ：
+Claude Code は起動時にすべての設定ファイルを自動的にプリロードします — CLAUDE.md、メモリ、スキル、MCP server 定義、hooks、rules など。あなたが何も入力していなくても、これらはすべて context window に詰め込まれます。
+
+これは2週間使用した実際のプロジェクトです：
 
 ![Context Budget](docs/democontextbudged.png)
 
-**このディレクトリで Claude Code セッションを開始すると、会話を始める前にすでに 70.9K tokens がロードされている。** これは 200K context window の 35.4% — 一文字もタイプしないうちに消えている。このオーバーヘッドだけの推定コスト：Opus で1セッションあたり $1.06 USD、Sonnet で $0.21 USD。
+**70.9K tokens — 200K context window の 35.4% が、一文字も打つ前に消えている。** このオーバーヘッドだけの推定コスト：Opus $1.06 USD / Sonnet $0.21 USD（セッションごと）。
 
-残りの 64.5% は、あなたのメッセージ、Claude の応答、tool results で共有され、context compression が起動するまで持つ。context が満杯に近いほど、Claude の精度は下がる — **context rot** と呼ばれる現象だ。
+残りの 64.5% は、あなたのメッセージ・Claude の応答・tool results で奪い合いになります。context が埋まるほど Claude の精度は落ちる — いわゆる **context rot** です。
 
-70.9K はどこから来る？**オフラインで計測できる**すべてを含んでいる — CLAUDE.md、メモリ、スキル、MCP server 定義、設定、hooks、rules、commands、agents — 項目ごとにトークン化。さらに**推定システムオーバーヘッド**（~21K tokens）— Claude Code が毎回の API call でロードする不変の基盤：system prompt、23+ 個のビルトイン tool 定義、MCP tool schemas。
+70.9K の内訳：オフラインで計測できるすべての config ファイルの token 合計に、推定システムオーバーヘッド（~21K tokens）を加えたもの。後者は system prompt、23+ 個のビルトイン tool 定義、MCP tool schemas で、毎回の API call でロードされます。
 
-そしてこれは数えられるものだけ。**runtime injections** — Claude Code がセッション中に静かに追加する tokens — は**含まれていない**：
+ただし、これは**静的な**部分だけ。以下の **runtime injections** は含まれていません：
 
-- **Rule re-injection** — すべての rule ファイルが、tool call のたびに context に再注入される。~30回の tool call 後、これだけで context window の ~46% を消費し得る
+- **Rule re-injection** — すべての rule ファイルが tool call のたびに context に再注入される。~30回の tool call 後、これだけで context window の ~46% を消費し得る
 - **File change diffs** — 読み書きしたファイルが外部で変更された場合（例：linter）、差分全体が隠れた system-reminder として注入される
-- **System reminders** — マルウェア警告、token ナッジ、その他の隠れた injection がメッセージに付加される
+- **System reminders** — マルウェア警告、token ナッジなどの隠れた injection
 - **Conversation history** — あなたのメッセージ、Claude の応答、すべての tool results が毎回の API call で再送される
 
-セッション中盤の実際の使用量は 70.9K よりはるかに多い。ただ見えないだけ。
+セッション中盤の実際の使用量は 70.9K よりはるかに多い。ただ見えないだけです。
 
-### 問題 2：context が汚染されている
+### 設定が間違った scope に散らばっている
 
-Claude Code は作業するたびに、メモリ、スキル、MCP config、commands、agents、rules を静かに作成し、現在のディレクトリに対応する scope に放り込む。どこでも使いたい設定が、1つのプロジェクトに閉じ込められる。1つのリポだけのデプロイスキルが、グローバルに漏れて全プロジェクトを汚染する。
+もう1つの問題：Claude Code は作業中に、メモリ・スキル・MCP config・commands・rules を自動で作成し、現在のディレクトリに対応する scope に放り込みます。
 
-グローバルにある Python pipeline スキルが React フロントエンドのセッションにもロードされる。重複した MCP エントリが同じサーバーを2回初期化する。2週間前の古いメモリが現在の指示と矛盾する。scope を間違えた項目はすべて tokens を無駄にし、**さらに**精度を下げる。
+その結果：
+- どこでも使いたい設定が、1つのプロジェクトに閉じ込められる
+- 1つのリポ専用のデプロイスキルが global に漏れて、全プロジェクトを汚染する
+- global にある Python pipeline スキルが React フロントエンドのセッションにもロードされる
+- 重複した MCP エントリが同じサーバーを2回初期化する
+- 古いメモリが現在の指示と矛盾する
 
-全体像を見る方法がない。すべての scope、すべての項目、すべての継承を一度に見せるコマンドは存在しない。
+scope を間違えたアイテムはすべて token を浪費し、**さらに**精度を下げます。そして、すべての scope を横断して全体像を見せてくれるコマンドは存在しません。
 
-### 解決策：ビジュアルダッシュボード
+### 解決策：コマンド1つでダッシュボードを開く
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-コマンド1つ。Claude が保存しているすべてを、scope 階層ごとに整理して表示。**始める前に token 予算が見える。** scope 間でアイテムをドラッグ。古いメモリを削除。重複を発見。Claude の動作に本当に影響しているものをコントロール。
+Claude が保存しているすべてを scope 階層ごとに表示。**始める前に token 予算が見える。** scope 間でドラッグ移動、古いメモリを削除、重複を発見。
 
-> **初回実行で `/cco` skill が自動インストール** — 以降、どの Claude Code セッションでも `/cco` と入力するだけでダッシュボードが開く。
+> **初回実行で `/cco` skill が自動インストール** — 以降、どのセッションでも `/cco` と入力するだけでダッシュボードが開きます。
 
 ### 例：token を食っているものを見つける
 
-ダッシュボードを開き、**Context Budget** をクリック、**By Tokens** に切り替え — 一番消費しているものが上に来る。忘れていた 2.4K token の CLAUDE.md？3つの scope で重複しているスキル？今見えた。クリーンアップして、context window の 10-20% を節約。
+ダッシュボードを開き、**Context Budget** → **By Tokens** に切り替え。一番消費しているものが上に来ます。忘れていた 2.4K token の CLAUDE.md？3つの scope で重複しているスキル？クリーンアップすれば context window の 10-20% を節約できます。
 
 ### 例：scope 汚染を修正する
 
-プロジェクト内で Claude に「TypeScript + ESM がいい」と言ったが、この設定は全プロジェクトで使いたい。そのメモリを Project から Global にドラッグ。**完了。1回ドラッグ。** グローバルにあるデプロイスキルが実は1つのリポ専用？そのプロジェクト scope にドラッグすれば、他のプロジェクトからは見えなくなる。
+プロジェクト内で Claude に「TypeScript + ESM がいい」と言ったけど、全プロジェクトで適用したい。そのメモリを Project から Global にドラッグ。**完了。1回のドラッグ。** global にあるデプロイスキルが実は1つのリポ専用？該当する Project scope にドラッグすれば、他のプロジェクトからは見えなくなります。
 
 ### 例：古いメモリを削除する
 
-Claude はあなたが何気なく言ったことや、*覚えておくべきだと思った*ことから自動でメモリを作る。1週間後にはもう関係ないのに、毎セッションでロードされ続ける。閲覧、読む、削除。**Claude が自分について何を知っていると思うか、あなたが決める。**
+Claude は何気ない発言から自動でメモリを作ります。1週間後にはもう関係ないのに、毎セッションでロードされ続ける。閲覧、確認、削除。**Claude が自分について何を知っていると思うかは、あなたが決めてください。**
 
 ---
 

@@ -12,58 +12,65 @@
 
 ## 问题
 
-每次你使用 Claude Code 时，有两件事在默默发生 — 而你完全看不到。
+你可能没注意过，Claude Code 每次启动的时候，你的 context window 已经被吃掉一大块了。
 
-### 问题 1：你根本不知道 context 已经用了多少
+### 还没开始写代码，token 预算就少了三分之一
 
-这是一个使用两周后的真实项目目录：
+Claude Code 启动时会自动预加载一堆配置文件 — CLAUDE.md、记忆、技能、MCP server 定义、Hook、规则等等。你还没说话，它就已经全塞进 context window 了。
+
+看一个真实项目，用了两周之后是这样的：
 
 ![Context Budget](docs/democontextbudged.png)
 
-**如果你在这个目录下启动 Claude Code session，在你开始对话之前就已经加载了 70.9K tokens。** 也就是你 200K context window 的 35.4% — 你还没输入一个字就没了。光是这些开销的估计成本：Opus 每个 session $1.06 USD，Sonnet $0.21 USD。
+**70.9K tokens — 直接占掉你 200K context window 的 35.4%。** 一个字都没打就没了。每次 session 光这些 overhead 的成本：Opus $1.06 USD，Sonnet $0.21 USD。
 
-剩下的 64.5% 要和你的消息、Claude 的回复以及 tool results 共享，直到 context compression 启动。Context 越满，Claude 越不准 — 这个效应叫做 **context rot**。
+剩下的 64.5% 要跟你的对话、Claude 的回复、tool results 抢空间。context 越满 Claude 越不准，这叫 **context rot**。
 
-70.9K 从哪来的？它包括所有我们可以**离线测量**的内容 — 你的 CLAUDE.md、记忆、技能、MCP server 定义、设置、Hook、规则、命令和代理 — 逐项计算 token。再加上一个**估算的系统开销**（~21K tokens），也就是 Claude Code 每次 API call 都会加载的固定基础设施：system prompt、23+ 个内置 tool 定义和 MCP tool schemas。
+70.9K 怎么来的？就是所有能离线测量的 config 文件 token 加总，再加上一个估算的系统开销（~21K tokens）— system prompt、23+ 个内置 tool 定义、MCP tool schemas，每次 API call 都会加载。
 
-而这还只是数得到的部分。它**不包括** **runtime injections** — Claude Code 在 session 期间静默添加的 tokens：
+但这还只是**静态**部分。下面这些 **runtime injections** 根本没算进去：
 
-- **Rule re-injection** — 你所有的 rule 文件在每次 tool call 之后都会被重新注入 context。大约 ~30 次 tool call 之后，光是这一项就能占掉你 ~46% 的 context window
-- **File change diffs** — 当你读过或写过的文件被外部修改（比如 linter），完整的 diff 会作为隐藏的 system-reminder 注入
-- **System reminders** — malware 警告、token 提示和其他隐藏的 injections 会附加在消息后面
-- **Conversation history** — 你的消息、Claude 的回复和所有 tool results 在每次 API call 时都会被重新发送
+- **Rule re-injection** — 所有 rule 文件在每次 tool call 后都会重新注入 context。大约 30 次 tool call 后，光这一项就能吃掉 ~46% 的 context window
+- **File change diffs** — 你读过或写过的文件被外部修改（比如 linter），整个 diff 会作为隐藏的 system-reminder 注入
+- **System reminders** — malware 警告、token 提示等隐藏 injections
+- **Conversation history** — 你的消息、Claude 的回复和所有 tool results 每次 API call 都重新发送
 
-你在 session 中的实际用量远远高于 70.9K。你只是看不到。
+所以 session 进行到一半的时候，实际用量远高于 70.9K。你只是看不到。
 
-### 问题 2：你的 context 被污染了
+### 配置散落在错误的位置
 
-Claude Code 每次你工作时都会默默创建记忆、技能、MCP config、命令、代理和规则 — 然后丢进和你当前目录匹配的 scope。你想要全局生效的偏好？被锁在某个项目里。只属于某个仓库的 deploy 技能？泄漏到 global，污染你所有其他项目。
+另一个问题：Claude Code 工作时会默默创建记忆、技能、MCP config、命令和规则，然后直接丢进当前目录对应的 scope。
 
-一个 Python pipeline 技能放在 global，结果每次你开 React frontend session 都会被加载。重复的 MCP entry 会初始化同一个 server 两次。过时的记忆和你当前的指令互相矛盾。每一个放错位置的项目都在浪费 token **并且**降低准确度。
+结果就是：
+- 你想全局生效的偏好，被锁在某个项目里
+- 只属于某个仓库的 deploy 技能，泄漏到 global 污染所有其他项目
+- Python pipeline 技能放在 global，每次开 React session 都会被加载
+- 重复的 MCP entry 导致同一个 server 初始化两次
+- 过时的记忆和当前指令互相矛盾
 
-你没有办法看到全貌。没有任何一条命令可以一次显示所有 scope、所有项目、所有继承关系。
+每个放错位置的东西都在浪费 token **并且**降低准确度。而你没有任何一条命令可以一次看到所有 scope 的全貌。
 
-### 解决办法：可视化仪表盘
+### 解决：一条命令开仪表盘
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-一条命令。看到 Claude 存了什么 — 按 scope 层级排好。**开始之前就看到你的 token 预算。** 在 scope 之间拖拽移动。删除过时记忆。找出重复项目。掌控什么在真正影响 Claude 的行为。
+看到 Claude 存了什么，按 scope 层级排好。**开始之前就知道你的 token 预算。** 拖拽移动、删过时记忆、找重复项。
 
-> **首次运行会自动安装 `/cco` skill** — 之后在任何 Claude Code session 里输入 `/cco` 就能打开仪表盘。
+> **首次运行自动安装 `/cco` skill** — 之后在任何 Claude Code session 输入 `/cco` 就能打开仪表盘。
 
 ### 示例：找出什么在吃你的 tokens
 
-打开仪表盘，点击 **Context Budget**，切换到 **By Tokens** — 最大的消耗者会排在最上面。一个你忘了的 2.4K token CLAUDE.md？一个在三个 scope 里重复的技能？现在你看到了。清理它，省下 10-20% 的 context window。
+打开仪表盘，点 **Context Budget**，切到 **By Tokens** — 最大的消耗者排最上面。一个忘了的 2.4K token CLAUDE.md？一个在三个 scope 重复的技能？现在看到了。清理掉，省 10-20% context window。
 
 ### 示例：修复 scope 污染
 
-你在某个项目里告诉 Claude「我喜欢 TypeScript + ESM」，但这个偏好应该全局生效。把那条记忆从 Project 拖到 Global。**搞定。拖一下。** 一个 deploy 技能放在 global 但其实只有一个仓库用得到？拖进那个 Project scope — 其他项目就不会再看到它了。
+你在某个项目里跟 Claude 说「我喜欢 TypeScript + ESM」，但这个偏好应该全局生效。把那条记忆从 Project 拖到 Global。**搞定，拖一下。** deploy 技能放在 global 但其实只有一个仓库用？拖进那个 Project scope — 其他项目就看不到了。
 
-### 示例：删除过时记忆
+### 示例：删过时记忆
 
-Claude 会自动记住你随口说的东西，或者它*以为*你想记住的东西。一周后已经没用了但还是每次 session 都加载。浏览、阅读、删除。**你来决定 Claude 以为自己知道你什么。**
+Claude 会自动记住你随口说的东西。一周后没用了但还是每次 session 都加载。浏览、阅读、删除。**你来决定 Claude 以为自己知道你什么。**
 
 ---
 
