@@ -151,8 +151,10 @@ async function handleRequest(req, res) {
       if (!cur) break;
     }
 
-    // Categories that Claude loads into context at session start
-    // Sessions and plugins are NOT loaded into context
+    // Categories that Claude loads into context at session start.
+    // Sessions and plugins are NOT loaded into context.
+    // Individual memory files are NOT pre-loaded — only MEMORY.md (index) is.
+    // Claude reads individual memories on-demand via readFileState.
     const CONTEXT_CATEGORIES = new Set(["memory", "skill", "config", "mcp", "rule", "command", "agent", "hook"]);
 
     // Tokenize items for a set of scope IDs, return per-item breakdown
@@ -165,7 +167,13 @@ async function handleRequest(req, res) {
       for (const item of items) {
         let text = "";
         try {
-          if (item.category === "mcp") {
+          if (item.category === "memory") {
+            // Individual memory files are NOT pre-loaded into context.
+            // Only MEMORY.md (index) is loaded at session start.
+            // Individual files are read on-demand via readFileState.
+            // Skip all individual memory items from context budget.
+            continue;
+          } else if (item.category === "mcp") {
             // MCP: tokenize the config JSON (name-only placeholders at startup)
             text = JSON.stringify(item.mcpConfig || {}, null, 2);
           } else if (item.category === "hook") {
@@ -175,7 +183,7 @@ async function handleRequest(req, res) {
             // Skills load name + description only (not full SKILL.md)
             text = `${item.name}\n${item.description || ""}`;
           } else if (item.path) {
-            // Memory, config, rule, command, agent: read file content
+            // Config, rule, command, agent: read file content
             text = await readFile(item.path, "utf-8");
           }
         } catch {
@@ -206,15 +214,55 @@ async function handleRequest(req, res) {
       getMethod(),
     ]);
 
-    // System overhead: ~21K immutable scaffold (GitHub #30103)
-    const SYSTEM_OVERHEAD = 21000;
+    // Add MEMORY.md files — these are not in scanner items but ARE pre-loaded
+    async function addMemoryIndexFiles(scopeIds, targetArray) {
+      for (const sid of scopeIds) {
+        const s = cachedData.scopes.find(sc => sc.id === sid);
+        if (!s) continue;
+        // Find MEMORY.md path for this scope
+        let memPath = null;
+        if (s.id === "global") {
+          memPath = join(CLAUDE_DIR, "memory", "MEMORY.md");
+        } else if (s.claudeProjectDir) {
+          memPath = join(s.claudeProjectDir, "memory", "MEMORY.md");
+        }
+        if (!memPath) continue;
+        try {
+          const text = await readFile(memPath, "utf-8");
+          const { tokens, confidence } = await countTokens(text);
+          if (tokens > 0) {
+            targetArray.push({
+              category: "memory",
+              subType: "index",
+              name: "MEMORY.md",
+              path: memPath,
+              tokens,
+              confidence,
+              sizeBytes: Buffer.byteLength(text, "utf-8"),
+              scopeId: sid,
+              scopeName: s.name,
+            });
+          }
+        } catch { /* file doesn't exist */ }
+      }
+    }
 
-    // MCP overhead estimate: count defined servers × rough average
-    // Light server ~1.5K tokens, we use this as conservative estimate
+    await Promise.all([
+      addMemoryIndexFiles([scopeId], currentItems),
+      addMemoryIndexFiles(parentIds, inheritedItems),
+    ]);
+
+    // System overhead: ~22.5K (system prompt ~6.6K + system tools ~15.9K)
+    // Based on /context measurements
+    const SYSTEM_OVERHEAD = 22500;
+
+    // MCP overhead: actual tool schema definitions are much larger than the config JSON.
+    // Measured via /context: 50K across 16 servers = ~3100 per server average.
+    // Range: 195 tok (rss-reader, 2 tools) to 8962 tok (Google Calendar, 9 tools).
     const mcpServerCount = cachedData.items.filter(
       i => i.category === "mcp" && (i.scopeId === scopeId || parentIds.includes(i.scopeId))
     ).length;
-    const mcpOverhead = mcpServerCount * 1500;
+    const mcpOverhead = mcpServerCount * 3100;
 
     const currentTotal = currentItems.reduce((sum, i) => sum + i.tokens, 0);
     const inheritedTotal = inheritedItems.reduce((sum, i) => sum + i.tokens, 0);
