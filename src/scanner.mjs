@@ -19,6 +19,16 @@ const MANAGED_DIR = platform() === "darwin"
   ? "/Library/Application Support/ClaudeCode"
   : "/etc/claude-code";
 
+/**
+ * Check if a scope's .claude/ dir is the same as the global CLAUDE_DIR.
+ * This happens when repoDir === HOME (e.g. /home/user).
+ * In that case, project-scoped scanners should skip .claude/ to avoid
+ * double-counting items already scanned by the global scope.
+ */
+function isGlobalClaudeDir(scope) {
+  return scope.repoDir && join(scope.repoDir, ".claude") === CLAUDE_DIR;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 async function exists(p) {
@@ -363,7 +373,7 @@ async function scanSkills(scope) {
     if (await exists(dir)) skillDirs.push(dir);
     const managedSkills = join(MANAGED_DIR, ".claude", "skills");
     if (await exists(managedSkills)) skillDirs.push(managedSkills);
-  } else if (scope.repoDir) {
+  } else if (scope.repoDir && !isGlobalClaudeDir(scope)) {
     // Per-repo skills: repo/.claude/skills/
     const dir = join(scope.repoDir, ".claude", "skills");
     if (await exists(dir)) skillDirs.push(dir);
@@ -494,7 +504,7 @@ async function scanMcpServers(scope) {
   // Also scan mcpServers embedded inside settings files
   const settingsFiles = scope.id === "global"
     ? [join(CLAUDE_DIR, "settings.json"), join(CLAUDE_DIR, "settings.local.json")]
-    : scope.repoDir
+    : (scope.repoDir && !isGlobalClaudeDir(scope))
       ? [join(scope.repoDir, ".claude", "settings.json"), join(scope.repoDir, ".claude", "settings.local.json")]
       : [];
 
@@ -539,7 +549,7 @@ async function scanConfigs(scope) {
         { name: "CLAUDE.md (managed)", path: join(MANAGED_DIR, "CLAUDE.md"), desc: "Enterprise managed instructions" },
         { name: "managed-settings.json", path: join(MANAGED_DIR, "managed-settings.json"), desc: "Enterprise managed settings" },
       ]
-    : scope.repoDir
+    : (scope.repoDir && !isGlobalClaudeDir(scope))
       ? [
           { name: "CLAUDE.md", path: join(scope.repoDir, "CLAUDE.md"), desc: "Project instructions" },
           { name: ".claude/CLAUDE.md", path: join(scope.repoDir, ".claude", "CLAUDE.md"), desc: "Project instructions" },
@@ -579,7 +589,7 @@ async function scanHooks(scope) {
         { path: join(CLAUDE_DIR, "settings.local.json"), label: "settings.local.json" },
         { path: join(MANAGED_DIR, "managed-settings.json"), label: "managed-settings.json" },
       ]
-    : scope.repoDir
+    : (scope.repoDir && !isGlobalClaudeDir(scope))
       ? [
           { path: join(scope.repoDir, ".claude", "settings.json"), label: "settings.json" },
           { path: join(scope.repoDir, ".claude", "settings.local.json"), label: "settings.local.json" },
@@ -710,7 +720,7 @@ async function scanRules(scope) {
   if (scope.id === "global") {
     const dir = join(CLAUDE_DIR, "rules");
     if (await exists(dir)) rulesDirs.push(dir);
-  } else if (scope.repoDir) {
+  } else if (scope.repoDir && !isGlobalClaudeDir(scope)) {
     const dir = join(scope.repoDir, ".claude", "rules");
     if (await exists(dir)) rulesDirs.push(dir);
   }
@@ -758,7 +768,7 @@ async function scanCommands(scope) {
   if (scope.id === "global") {
     const dir = join(CLAUDE_DIR, "commands");
     if (await exists(dir)) cmdDirs.push(dir);
-  } else if (scope.repoDir) {
+  } else if (scope.repoDir && !isGlobalClaudeDir(scope)) {
     const dir = join(scope.repoDir, ".claude", "commands");
     if (await exists(dir)) cmdDirs.push(dir);
   }
@@ -798,7 +808,7 @@ async function scanAgents(scope) {
   if (scope.id === "global") {
     const dir = join(CLAUDE_DIR, "agents");
     if (await exists(dir)) agentDirs.push(dir);
-  } else if (scope.repoDir) {
+  } else if (scope.repoDir && !isGlobalClaudeDir(scope)) {
     const dir = join(scope.repoDir, ".claude", "agents");
     if (await exists(dir)) agentDirs.push(dir);
   }
