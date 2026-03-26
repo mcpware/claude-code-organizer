@@ -15,13 +15,36 @@
 
 ## El problema
 
-Claude Code crea memories, skills y config de MCP sin hacer ruido cada vez que trabajas, y las deja en el scope que coincida con tu directorio actual. ¿Una preferencia que querías en todas partes? Encerrada en un solo proyecto. ¿Un deploy skill que solo tiene sentido para un repo? Acaba en `Global` y contamina todos los demás proyectos.
+Cada vez que usas Claude Code, dos cosas ocurren en silencio — y ninguna de las dos es visible para ti.
 
-**No es solo desorden: empeora el rendimiento de tu IA.** En cada sesión, Claude carga en tu ventana de contexto toda la config del scope actual más todo lo que hereda de los scopes padre. Elementos en el scope equivocado significan tokens desperdiciados, contexto contaminado y menos precisión. Un skill de pipeline en Python que se quedó en `Global` acaba cargándose en tu sesión de frontend en React. Entradas duplicadas de MCP inicializan el mismo servidor dos veces. Memories obsoletas contradicen tus instrucciones actuales.
+### Problema 1: No tienes idea de cuánto context ya está usado
 
-### "Pídele a Claude que lo arregle"
+Este es un directorio de proyecto real después de dos semanas de uso:
 
-Podrías pedirle a Claude Code que gestione su propia config. Pero terminarás yendo y viniendo: `ls` en un directorio, `cat` archivo por archivo, intentando recomponer la imagen completa a partir de fragmentos de texto. **No hay ningún comando que te muestre el árbol completo** de todos los scopes, todos los elementos y toda la herencia al mismo tiempo.
+![Context Budget](docs/democontextbudged.png)
+
+**Si inicias una sesión de Claude Code en este directorio, ya se han cargado 70.9K tokens antes de que empieces cualquier conversación.** Eso es el 35.4% de tu context window de 200K — desaparecido antes de que escribas un solo carácter. El coste estimado solo de este overhead: $1.06 USD por sesión en Opus, $0.21 en Sonnet.
+
+El 64.5% restante se comparte entre tus mensajes, las respuestas de Claude y los resultados de herramientas antes de que se active la compresión de contexto. Cuanto más lleno esté el contexto, menos preciso se vuelve Claude — un efecto conocido como **context rot**.
+
+¿De dónde salen los 70.9K? Incluye todo lo que podemos **medir offline** — tu CLAUDE.md, memories, skills, definiciones de MCP servers, settings, hooks, rules, commands y agents — tokenizado por elemento. Más un **overhead de sistema estimado** (~21K tokens) por la estructura inmutable que Claude Code carga en cada API call: el system prompt, 23+ tool definitions integradas y MCP tool schemas.
+
+Y eso es solo lo que podemos contar. **No** incluye **runtime injections** — tokens que Claude Code añade silenciosamente durante la sesión:
+
+- **Rule re-injection** — todos tus archivos de rules se reinyectan en el contexto después de cada tool call. Tras ~30 tool calls, solo esto puede consumir ~46% de tu context window
+- **File change diffs** — cuando un archivo que leíste o escribiste se modifica externamente (ej. por un linter), el diff completo se inyecta como un system-reminder oculto
+- **System reminders** — avisos de malware, recordatorios de tokens y otras inyecciones ocultas se adjuntan a los mensajes
+- **Conversation history** — tus mensajes, las respuestas de Claude y todos los resultados de herramientas se reenvían en cada API call
+
+Tu uso real a mitad de sesión es significativamente mayor que 70.9K. Simplemente no puedes verlo.
+
+### Problema 2: Tu context está contaminado
+
+Claude Code crea silenciosamente memories, skills, configs de MCP, commands, agents y rules cada vez que trabajas — y los vuelca en el scope que coincida con tu directorio actual. ¿Una preferencia que querías en todas partes? Encerrada en un solo proyecto. ¿Un deploy skill que solo tiene sentido para un repo? Se filtra a global, contaminando todos los demás proyectos.
+
+Un skill de pipeline en Python en global se carga en tu sesión de frontend React. Entradas MCP duplicadas inicializan el mismo servidor dos veces. Memories obsoletas de hace dos semanas contradicen tus instrucciones actuales. Cada elemento en el scope equivocado desperdicia tokens **y** degrada la precisión.
+
+No tienes manera de ver la imagen completa. Ningún comando muestra todos los elementos de todos los scopes, toda la herencia, todo a la vez.
 
 ### La solución: un dashboard visual
 
@@ -29,17 +52,19 @@ Podrías pedirle a Claude Code que gestione su propia config. Pero terminarás y
 npx @mcpware/claude-code-organizer
 ```
 
-Un solo comando. Ves todo lo que Claude tiene guardado, organizado por jerarquía de scopes. **Mueve elementos entre scopes con drag-and-drop.** Borra memories obsoletas. Encuentra duplicados. Recupera el control sobre lo que de verdad influye en el comportamiento de Claude.
+Un solo comando. Ves todo lo que Claude tiene guardado — organizado por jerarquía de scopes. **Ve tu presupuesto de tokens antes de empezar.** Arrastra elementos entre scopes. Borra memories obsoletas. Encuentra duplicados. Toma el control de lo que de verdad influye en el comportamiento de Claude.
 
-### Ejemplo: `Project` → `Global`
+> **La primera ejecución auto-instala un `/cco` skill** — después, solo escribe `/cco` en cualquier sesión de Claude Code para abrir el dashboard.
 
-Le dijiste a Claude "I prefer TypeScript + ESM" mientras estabas dentro de un proyecto, pero esa preferencia te sirve en todas partes. Abre el dashboard, arrastra esa memory de `Project` a `Global`. **Hecho. Un solo movimiento.**
+### Ejemplo: Encuentra qué se está comiendo tus tokens
 
-### Ejemplo: `Global` → `Project`
+Abre el dashboard, haz clic en **Context Budget**, cambia a **By Tokens** — los mayores consumidores aparecen arriba. ¿Un CLAUDE.md de 2.4K tokens que olvidaste? ¿Un skill duplicado en tres scopes? Ahora lo ves. Límpialo y ahorra 10-20% de tu context window.
 
-Un deploy skill que está en `Global` solo tiene sentido para un repo. Arrástralo al scope `Project` correspondiente y los demás proyectos dejarán de verlo.
+### Ejemplo: Corrige la contaminación de scopes
 
-### Ejemplo: borrar memories obsoletas
+Le dijiste a Claude "I prefer TypeScript + ESM" dentro de un proyecto, pero esa preferencia aplica en todas partes. Arrastra esa memory de Project a Global. **Hecho. Un arrastre.** ¿Un deploy skill en global que solo tiene sentido para un repo? Arrástralo al scope Project correspondiente — los demás proyectos dejarán de verlo.
+
+### Ejemplo: Borrar memories obsoletas
 
 Claude crea memories automáticamente a partir de cosas que dijiste al pasar, o de cosas que *creyó* que querías conservar. Una semana después ya no importan, pero siguen cargándose en cada sesión. Navega, lee y borra. **Tú decides qué cree Claude que sabe de ti.**
 
@@ -52,23 +77,11 @@ Claude crea memories automáticamente a partir de cosas que dijiste al pasar, o 
 - **Confirmación antes de mover** - Cada movimiento muestra un modal de confirmación antes de tocar ningún archivo
 - **Seguridad por tipo** - Las memories solo pueden moverse a carpetas de memories, los skills a carpetas de skills y MCP a configs de MCP
 - **Búsqueda y filtros** - Busca al instante en todos los elementos y filtra por categoría (`Memory`, `Skills`, `MCP`, `Config`, `Hooks`, `Plugins`, `Plans`)
+- **Context Budget** - Ve exactamente cuántos tokens consume tu config antes de escribir nada — desglose por elemento, costes heredados de scopes, estimación de overhead del sistema y % de los 200K de context usados
 - **Panel de detalle** - Haz clic en cualquier elemento para ver todos sus metadatos, su descripción, la ruta del archivo y abrirlo en VS Code
 - **Escaneo completo por proyecto** - Cada scope muestra todos los tipos de elementos: memories, skills, servidores MCP, config, hooks y plans
 - **Movimientos de archivos reales** - Mueve archivos de verdad dentro de `~/.claude/`; no es solo un visor
-- **45 pruebas E2E** - Suite de Playwright con verificación real del sistema de archivos después de cada operación
-
-## Por qué un dashboard visual
-
-Claude Code ya puede listar y mover archivos desde la CLI, pero terminas en un juego de adivinanzas con tu propia config. El dashboard te da **visibilidad total de un vistazo:**
-
-| Lo que necesitas | Pedirle a Claude | Dashboard visual |
-|---------------|:-----------:|:----------------:|
-| **Verlo todo de una vez** en todos los scopes | `ls` un directorio cada vez y reconstruirlo a mano | Árbol de scopes, de un vistazo |
-| **¿Qué se carga en mi proyecto actual?** | Ejecutar varios comandos y esperar no dejarte nada | Abre el proyecto y ves toda la cadena de herencia |
-| **Mover elementos entre scopes** | Buscar rutas codificadas y hacer `mv` a mano | Drag-and-drop con confirmación |
-| **Leer el contenido de la config** | `cat` archivo por archivo | Clic → panel lateral |
-| **Encontrar duplicados o elementos obsoletos** | `grep` entre directorios crípticos | Búsqueda + filtro por categoría |
-| **Limpiar memories que ya no usas** | Averiguar qué archivos borrar | Navega, lee y borra en el sitio |
+- **100+ pruebas E2E** - Suite de Playwright que cubre verificación del filesystem, seguridad (path traversal, input malformado), context budget y las 11 categorías
 
 ## Inicio rápido
 
@@ -135,6 +148,7 @@ Revisamos todas las herramientas de config de Claude Code que pudimos encontrar.
 | Movimientos con drag-and-drop | No | No | No | **Sí** |
 | Movimientos entre scopes | No | Un clic | No | **Sí** |
 | Borrar elementos obsoletos | No | No | No | **Sí** |
+| Context budget (token breakdown) | No | No | No | **Sí** |
 | Herramientas MCP | No | No | Sí | **Sí** |
 | Cero dependencias | No (Tauri) | No (VS Code) | No (React+Rust+SQLite) | **Sí** |
 | Independiente (sin IDE) | Sí | No | Sí | **Sí** |

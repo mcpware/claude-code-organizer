@@ -10,25 +10,60 @@
 
 ![Claude Code Organizer Demo](docs/demo.gif)
 
-## 痛点
+## 问题
 
-你有没有跟 Claude Code 说过"记住这个"，结果发现它存错地方了？
+每次你使用 Claude Code 时，有两件事在默默发生 — 而你完全看不到。
 
-比如你在某个项目文件夹里，让 Claude 记住一个偏好设置。它就存到了这个项目的作用域下。等你切到另一个项目，Claude 完全不知道有这回事 — 那条记忆被锁死在原来的项目里了。
+### 问题 1：你根本不知道 context 已经用了多少
 
-反过来也一样坑：有些技能或记忆放在全局作用域，其实只对某一个仓库有用，结果污染了你所有的项目。
+这是一个使用两周后的真实项目目录：
 
-想手动修？那你得自己去翻 `~/.claude/` 目录，在一堆 `-home-user-projects-my-app/` 这种编码路径的文件夹里找到对应的文件，手动剪切粘贴。说实话，挺折腾的。
+![Context Budget](docs/democontextbudged.png)
 
-**Claude Code Organizer 就是来解决这个问题的。**
+**如果你在这个目录下启动 Claude Code session，在你开始对话之前就已经加载了 70.9K tokens。** 也就是你 200K context window 的 35.4% — 你还没输入一个字就没了。光是这些开销的估计成本：Opus 每个 session $1.06 USD，Sonnet $0.21 USD。
 
-### 举个例子：项目 → 全局
+剩下的 64.5% 要和你的消息、Claude 的回复以及 tool results 共享，直到 context compression 启动。Context 越满，Claude 越不准 — 这个效应叫做 **context rot**。
 
-你在某个项目里让 Claude 记住了"我喜欢用 TypeScript + ESM"。但这个偏好你希望全局生效。打开仪表盘，把那条记忆从项目拖到全局。搞定，一步到位。
+70.9K 从哪来的？它包括所有我们可以**离线测量**的内容 — 你的 CLAUDE.md、记忆、技能、MCP server 定义、设置、Hook、规则、命令和代理 — 逐项计算 token。再加上一个**估算的系统开销**（~21K tokens），也就是 Claude Code 每次 API call 都会加载的固定基础设施：system prompt、23+ 个内置 tool 定义和 MCP tool schemas。
 
-### 举个例子：全局 → 项目
+而这还只是数得到的部分。它**不包括** **runtime injections** — Claude Code 在 session 期间静默添加的 tokens：
 
-你有一个部署技能放在全局，但其实只有一个仓库用得上。把它拖到那个项目里去 — 其他项目就不会再看到它了。干净利落。
+- **Rule re-injection** — 你所有的 rule 文件在每次 tool call 之后都会被重新注入 context。大约 ~30 次 tool call 之后，光是这一项就能占掉你 ~46% 的 context window
+- **File change diffs** — 当你读过或写过的文件被外部修改（比如 linter），完整的 diff 会作为隐藏的 system-reminder 注入
+- **System reminders** — malware 警告、token 提示和其他隐藏的 injections 会附加在消息后面
+- **Conversation history** — 你的消息、Claude 的回复和所有 tool results 在每次 API call 时都会被重新发送
+
+你在 session 中的实际用量远远高于 70.9K。你只是看不到。
+
+### 问题 2：你的 context 被污染了
+
+Claude Code 每次你工作时都会默默创建记忆、技能、MCP config、命令、代理和规则 — 然后丢进和你当前目录匹配的 scope。你想要全局生效的偏好？被锁在某个项目里。只属于某个仓库的 deploy 技能？泄漏到 global，污染你所有其他项目。
+
+一个 Python pipeline 技能放在 global，结果每次你开 React frontend session 都会被加载。重复的 MCP entry 会初始化同一个 server 两次。过时的记忆和你当前的指令互相矛盾。每一个放错位置的项目都在浪费 token **并且**降低准确度。
+
+你没有办法看到全貌。没有任何一条命令可以一次显示所有 scope、所有项目、所有继承关系。
+
+### 解决办法：可视化仪表盘
+
+```bash
+npx @mcpware/claude-code-organizer
+```
+
+一条命令。看到 Claude 存了什么 — 按 scope 层级排好。**开始之前就看到你的 token 预算。** 在 scope 之间拖拽移动。删除过时记忆。找出重复项目。掌控什么在真正影响 Claude 的行为。
+
+> **首次运行会自动安装 `/cco` skill** — 之后在任何 Claude Code session 里输入 `/cco` 就能打开仪表盘。
+
+### 示例：找出什么在吃你的 tokens
+
+打开仪表盘，点击 **Context Budget**，切换到 **By Tokens** — 最大的消耗者会排在最上面。一个你忘了的 2.4K token CLAUDE.md？一个在三个 scope 里重复的技能？现在你看到了。清理它，省下 10-20% 的 context window。
+
+### 示例：修复 scope 污染
+
+你在某个项目里告诉 Claude「我喜欢 TypeScript + ESM」，但这个偏好应该全局生效。把那条记忆从 Project 拖到 Global。**搞定。拖一下。** 一个 deploy 技能放在 global 但其实只有一个仓库用得到？拖进那个 Project scope — 其他项目就不会再看到它了。
+
+### 示例：删除过时记忆
+
+Claude 会自动记住你随口说的东西，或者它*以为*你想记住的东西。一周后已经没用了但还是每次 session 都加载。浏览、阅读、删除。**你来决定 Claude 以为自己知道你什么。**
 
 ---
 
@@ -39,24 +74,11 @@
 - **移动前确认** — 每次操作前弹确认框，不会误操作
 - **类型隔离** — 记忆只能移到记忆文件夹，技能只能移到技能文件夹，不会搞混
 - **搜索 & 筛选** — 实时搜索所有条目，支持按类别筛选（记忆、技能、MCP、配置、钩子、插件、计划）
+- **Context Budget** — 在你开始输入之前就看到你的 config 占了多少 tokens — 逐项分析、继承的 scope 成本、系统开销估算、以及 200K context 的使用百分比
 - **详情面板** — 点击任意条目查看元数据、描述、文件路径，还能直接用 VS Code 打开
 - **零依赖** — 纯 Node.js 内置模块，SortableJS 走 CDN
 - **真·文件移动** — 直接操作 `~/.claude/` 目录里的文件，不是什么只读查看器
-
-## 为什么需要可视化仪表盘？
-
-Claude Code 用 CLI 就能列出和移动文件。那为什么还要这个工具？
-
-| 你想做的事 | CLI / Skill | 可视化仪表盘 |
-|-----------|:-----------:|:----------:|
-| **全局视野** — 一次看到所有作用域的记忆、技能、MCP 服务器 | 滚动一大段文本输出 | 作用域树，一目了然 |
-| **跨作用域感知** — 理解 Global vs Workspace vs Project 的继承关系 | 跑多条命令，脑内拼凑 | 带缩进的树状层级 |
-| **跨作用域移动** | 记住准确路径，敲命令 | 拖拽搞定 |
-| **预览内容** | 一个个 `cat` 文件 | 点击 → 侧边面板 |
-| **全局搜索** | `grep` + 手动筛选 | 实时搜索 + 分类过滤 |
-| **了解你有什么** | 自己数每个目录里的文件 | 按作用域×类别自动统计 |
-
-仪表盘给你**文字输出无法提供的全局视野** — 完整的作用域树一览无余，一眼发现放错位置的东西，拖一下就修好。不用背命令，不用打路径。
+- **100+ E2E 测试** — Playwright 测试套件，覆盖 filesystem 验证、安全性（路径穿越、格式错误输入）、context budget 和所有 11 个类别
 
 ## 快速上手
 

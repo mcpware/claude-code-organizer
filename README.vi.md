@@ -15,13 +15,36 @@
 
 ## vấn đề
 
-Claude Code âm thầm tạo memory, skill và config MCP mỗi khi bạn làm việc, rồi đẩy chúng vào scope nào khớp với thư mục hiện tại. Một preference lẽ ra áp dụng ở mọi nơi? Bị kẹt trong một Project. Một skill deploy chỉ dành cho một repo? Lại rơi vào Global, làm nhiễu mọi project khác.
+Mỗi khi bạn sử dụng Claude Code, hai điều âm thầm xảy ra — và cả hai đều không hiển thị với bạn.
 
-**Đây không chỉ là chuyện bừa bộn, nó còn làm AI của bạn kém chính xác hơn.** Mỗi session, Claude nạp toàn bộ config ở scope hiện tại cùng mọi thứ kế thừa từ scope cha vào context window. Những item nằm sai scope = tốn token, bẩn context, giảm độ chính xác. Một skill cho Python pipeline nằm ở Global sẽ bị nạp cả vào session React frontend. MCP entry trùng nhau có thể khởi tạo cùng một server hai lần. Memory cũ thì mâu thuẫn với chỉ dẫn hiện tại của bạn.
+### Vấn đề 1: Bạn không biết context đã dùng bao nhiêu rồi
 
-### "cứ bảo Claude tự sửa đi"
+Đây là thư mục project thực sau hai tuần sử dụng:
 
-Bạn vẫn có thể bảo Claude Code tự dọn config cho nó. Nhưng rồi sẽ lại phải lần từng bước: `ls` từng thư mục, `cat` từng file, ghép bức tranh tổng thể từ một loạt output rời rạc. **Không có lệnh nào cho bạn thấy toàn bộ cây** của mọi scope, mọi item và toàn bộ quan hệ kế thừa trong cùng một màn hình.
+![Context Budget](docs/democontextbudged.png)
+
+**Nếu bạn mở một session Claude Code trong thư mục này, 70.9K tokens đã được nạp trước khi bạn bắt đầu cuộc trò chuyện nào.** Đó là 35.4% context window 200K của bạn — biến mất trước khi bạn gõ một ký tự nào. Chi phí ước tính chỉ riêng overhead này: $1.06 USD mỗi session trên Opus, $0.21 trên Sonnet.
+
+64.5% còn lại được chia sẻ giữa tin nhắn của bạn, phản hồi của Claude và kết quả tool trước khi context compression bắt đầu. Context càng đầy, Claude càng kém chính xác — hiệu ứng gọi là **context rot**.
+
+70.9K đến từ đâu? Bao gồm mọi thứ chúng tôi có thể **đo offline** — CLAUDE.md, memory, skill, định nghĩa MCP server, settings, hooks, rules, commands và agents — được tokenize theo từng item. Cộng thêm **system overhead ước tính** (~21K tokens) cho khung cố định mà Claude Code nạp mỗi API call: system prompt, 23+ định nghĩa tool tích hợp và MCP tool schemas.
+
+Và đó mới chỉ là phần đếm được. Nó **không bao gồm** **runtime injections** — tokens mà Claude Code âm thầm thêm vào trong session:
+
+- **Rule re-injection** — tất cả file rule của bạn được tiêm lại vào context sau mỗi tool call. Sau ~30 tool calls, riêng điều này có thể ngốn ~46% context window
+- **File change diffs** — khi file bạn đã đọc hoặc viết bị sửa bên ngoài (ví dụ bởi linter), toàn bộ diff được tiêm vào dưới dạng system-reminder ẩn
+- **System reminders** — cảnh báo malware, nhắc nhở token và các injection ẩn khác được đính kèm vào tin nhắn
+- **Conversation history** — tin nhắn của bạn, phản hồi của Claude và tất cả kết quả tool được gửi lại mỗi API call
+
+Mức sử dụng thực tế giữa session của bạn cao hơn 70.9K đáng kể. Bạn chỉ không nhìn thấy.
+
+### Vấn đề 2: Context của bạn bị nhiễm
+
+Claude Code âm thầm tạo memory, skill, config MCP, commands, agents và rules mỗi khi bạn làm việc — rồi đẩy vào scope nào khớp với thư mục hiện tại. Preference muốn áp dụng mọi nơi? Bị kẹt trong một project. Skill deploy chỉ cho một repo? Rò rỉ vào global, làm nhiễm mọi project khác.
+
+Skill Python pipeline nằm ở global bị nạp vào session React frontend. MCP entry trùng khởi tạo cùng server hai lần. Memory cũ từ hai tuần trước mâu thuẫn với chỉ dẫn hiện tại. Mỗi item sai scope đều tốn token **và** giảm độ chính xác.
+
+Bạn không có cách nào thấy bức tranh toàn cảnh. Không có lệnh nào hiển thị tất cả item ở mọi scope, mọi kế thừa, cùng một lúc.
 
 ### cách giải quyết: dashboard trực quan
 
@@ -29,19 +52,21 @@ Bạn vẫn có thể bảo Claude Code tự dọn config cho nó. Nhưng rồi 
 npx @mcpware/claude-code-organizer
 ```
 
-Chỉ một lệnh. Bạn sẽ thấy toàn bộ những gì Claude đang lưu, sắp theo cây scope. **Kéo item giữa các scope.** Xóa memory cũ. Tìm item trùng. Lấy lại quyền kiểm soát những gì thực sự ảnh hưởng đến cách Claude hoạt động.
+Một lệnh duy nhất. Thấy mọi thứ Claude đã lưu — sắp xếp theo cây scope. **Xem token budget trước khi bắt đầu.** Kéo item giữa các scope. Xóa memory cũ. Tìm item trùng. Kiểm soát những gì thực sự ảnh hưởng đến hành vi của Claude.
 
-### ví dụ: Project → Global
+> **Lần chạy đầu tiên tự động cài `/cco` skill** — sau đó chỉ cần gõ `/cco` trong bất kỳ session Claude Code nào để mở dashboard.
 
-Bạn từng nói với Claude "I prefer TypeScript + ESM" khi đang đứng trong một project, nhưng preference đó áp dụng ở mọi nơi. Mở dashboard, kéo memory đó từ Project sang Global. **Xong. Một cú kéo.**
+### Ví dụ: Tìm thứ đang ngốn token của bạn
 
-### ví dụ: Global → Project
+Mở dashboard, bấm **Context Budget**, chuyển sang **By Tokens** — kẻ tiêu thụ lớn nhất ở trên cùng. CLAUDE.md 2.4K token mà bạn quên? Skill trùng ở ba scope? Giờ bạn thấy rồi. Dọn dẹp, tiết kiệm 10-20% context window.
 
-Một skill deploy đang nằm ở Global nhưng thực ra chỉ có ý nghĩa với một repo. Kéo nó vào scope Project tương ứng, các project khác sẽ không còn thấy nó nữa.
+### Ví dụ: Sửa nhiễm scope
 
-### ví dụ: xóa memory cũ
+Bạn nói với Claude "I prefer TypeScript + ESM" khi đang trong một project, nhưng preference đó áp dụng mọi nơi. Kéo memory đó từ Project sang Global. **Xong. Một cú kéo.** Skill deploy ở global nhưng chỉ có ý nghĩa với một repo? Kéo vào scope Project đó — project khác sẽ không thấy nữa.
 
-Claude có thể tự tạo memory từ những câu bạn nói vu vơ, hoặc từ những gì nó *nghĩ* là nên nhớ. Một tuần sau, chúng không còn liên quan nhưng vẫn bị nạp vào mọi session. Mở ra, đọc, xóa. **Bạn quyết định Claude nên "biết" gì về mình.**
+### Ví dụ: Xóa memory cũ
+
+Claude tự tạo memory từ những câu bạn nói vu vơ, hoặc từ những gì nó *nghĩ* là nên nhớ. Một tuần sau không còn liên quan nhưng vẫn bị nạp mọi session. Duyệt, đọc, xóa. **Bạn quyết định Claude nên "biết" gì về mình.**
 
 ---
 
@@ -52,23 +77,11 @@ Claude có thể tự tạo memory từ những câu bạn nói vu vơ, hoặc t
 - **Xác nhận trước khi di chuyển**: Mỗi lần move đều hiện modal xác nhận trước khi đụng vào file
 - **An toàn theo từng loại item**: Memory chỉ có thể move vào thư mục memory, skill vào thư mục skill, MCP vào config MCP
 - **Tìm kiếm và lọc**: Tìm tức thì trên toàn bộ item, lọc theo nhóm (Memory, Skills, MCP, Config, Hooks, Plugins, Plans)
+- **Context Budget**: Xem chính xác config của bạn ngốn bao nhiêu token trước khi gõ bất cứ gì — chi tiết từng item, chi phí scope kế thừa, ước tính system overhead và % của 200K context đã dùng
 - **Panel chi tiết**: Bấm vào bất kỳ item nào để xem đầy đủ metadata, mô tả, file path và mở trong VS Code
 - **Quét đầy đủ theo từng project**: Mỗi scope đều hiển thị đủ mọi loại item: memory, skill, MCP server, config, hook và plan
 - **Di chuyển file thật**: Tool thực sự move file trong `~/.claude/`, không phải chỉ để xem
-- **45 bài test E2E**: Bộ test Playwright có xác minh filesystem thật sau mỗi thao tác
-
-## vì sao cần dashboard trực quan?
-
-Claude Code vốn đã có thể liệt kê và di chuyển file qua CLI, nhưng dùng cách đó thì bạn sẽ phải dò config của chính mình theo kiểu hỏi tới hỏi lui từng chút một. Dashboard cho bạn **cái nhìn toàn cảnh chỉ trong một màn hình:**
-
-| Việc bạn cần | Nhờ Claude | Dashboard trực quan |
-|---------------|:-----------:|:----------------:|
-| **Xem tất cả cùng lúc** trên mọi scope | `ls` từng thư mục rồi tự ghép lại | Cây scope, nhìn là thấy |
-| **Project hiện tại đang nạp gì?** | Chạy nhiều lệnh, hy vọng không sót | Mở project → thấy toàn bộ chuỗi kế thừa |
-| **Move item giữa các scope** | Lần mò path đã encode, `mv` thủ công | Drag-and-drop có xác nhận |
-| **Đọc nội dung config** | `cat` từng file một | Bấm → panel bên |
-| **Tìm item trùng / item cũ** | `grep` trong các thư mục khó đọc | Search + filter theo category |
-| **Dọn memory không còn dùng** | Tự suy ra file nào nên xóa | Duyệt, đọc, xóa ngay tại chỗ |
+- **100+ bài test E2E**: Bộ test Playwright bao gồm xác minh filesystem, bảo mật (path traversal, input sai format), context budget và toàn bộ 11 category
 
 ## bắt đầu nhanh
 
@@ -135,6 +148,7 @@ Chúng tôi đã xem qua mọi tool cấu hình Claude Code mà tìm được. K
 | Move bằng drag-and-drop | Không | Không | Không | **Có** |
 | Move giữa các scope | Không | One-click | Không | **Có** |
 | Xóa item cũ | Không | Không | Không | **Có** |
+| Context budget (token breakdown) | Không | Không | Không | **Có** |
 | Tool MCP | Không | Không | Có | **Có** |
 | Zero dependencies | Không (Tauri) | Không (VS Code) | Không (React+Rust+SQLite) | **Có** |
 | Chạy độc lập (không cần IDE) | Có | Không | Có | **Có** |
