@@ -106,16 +106,36 @@ Claude Code can already list and move files via CLI — but you're stuck playing
 
 ## Context Budget
 
-Every Claude Code session silently loads your configs into the context window before you type anything. Memories, CLAUDE.md, skills, MCP servers, settings — it all adds up. Research shows that **21.8% of tokens in typical sessions are structural waste** ([arXiv 2603.09023](https://arxiv.org/abs/2603.09023)), and every model's accuracy degrades as context grows ([Chroma Study, 2025](https://www.trychroma.com/research/context-rot)).
+This is a real project directory. After two weeks of use:
 
-Click **Context Budget** in the scope header to see:
+![Context Budget](docs/democontextbudged.png)
 
-- **Current Scope** — every item in your selected project, with exact token count and file path
-- **Inherited** — everything loaded from parent scopes (global → workspace → project)
-- **System Overhead** — estimated ~21K token base scaffold ([GitHub #30103](https://github.com/anthropics/claude-code/issues/30103)) + MCP server definitions
-- **Total** — progress bar showing % of 200K context used before you start working
+> **If you start a Claude Code session under this directory, 70.9K tokens are already loaded before you start any conversation.** Estimated cost per session: $1.06 USD (Opus) · $0.21 USD (Sonnet).
+>
+> The remaining 64.5% is shared between your messages, Claude's responses, and tool results before context compression kicks in. The fuller the context, the less accurate Claude becomes — an effect known as **context rot**.
 
-Token counts use [ai-tokenizer](https://www.npmjs.com/package/ai-tokenizer) (99.79% accuracy for Claude) when installed, or bytes/4 estimation as fallback. Every number is labeled "measured" or "estimated" so you know exactly what you're looking at.
+### Where does 70.9K come from?
+
+The number includes everything we can **measure offline** — your CLAUDE.md, memories, skills, MCP server definitions, settings, hooks, rules, commands, and agents — tokenized per-item with ~99.8% accuracy. It also includes an **estimated system overhead** (~21K tokens) for the immutable scaffold that Claude Code loads on every API call: the system prompt, built-in tool definitions, and MCP tool schemas.
+
+What it does **not** include is **runtime injections** — additional tokens that Claude Code silently injects during a session:
+
+- **Rule re-injection** — all your rule files are re-injected into context after every tool call. After ~30 tool calls, this alone can consume ~46% of your context window
+- **File change diffs** — when a file you've read or written is modified externally (e.g. by a linter or formatter), the full diff is injected as a hidden system-reminder
+- **System reminders** — malware warnings, token usage nudges, and other hidden injections appended to every message
+- **Conversation history** — your messages, Claude's responses, and all tool results are resent on every API call
+
+Your actual mid-session token usage will be significantly higher than the pre-session estimate.
+
+### What you can do with Context Budget
+
+Click **Context Budget** in the scope header. Three views:
+
+- **By Scope** — collapsible hierarchy showing Current Scope → each inherited parent scope → System Overhead. See which scope is eating the most tokens
+- **By Category** — all items grouped by type (skills, memories, config, MCP, hooks...) across all scopes. Instantly spot duplicates — same skill inherited from two scopes
+- **By Tokens** — flat list sorted by token count, biggest first. Find the items worth optimizing
+
+Every item shows its source scope, so you know exactly where to go to clean up.
 
 ## Quick Start
 
