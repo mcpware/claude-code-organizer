@@ -39,6 +39,7 @@
           <span class="content-title" id="contentTitle">Organizer</span>
           <span class="content-scope-tag" id="contentScopeTag">global</span>
           <div class="content-inherit" id="contentInherit"></div>
+          <button class="export-btn ctx-budget-btn" id="ctxBudgetBtn" type="button" title="Show context token budget for this scope">Context Budget</button>
           <button class="export-btn" id="exportBtn" type="button" title="Export all configs to a folder">Export</button>
         </div>
         <div class="filter-bar" id="pills"></div>
@@ -108,6 +109,32 @@
         <button class="d-btn d-btn-open" id="detailOpen" type="button">Open in Editor</button>
         <button class="d-btn d-btn-move" id="detailMove" type="button">Move to...</button>
         <button class="d-btn d-btn-del" id="detailDelete" type="button">Delete</button>
+      </div>
+    </div>
+
+    <div class="detail hidden" id="ctxBudgetPanel">
+      <div class="detail-top">
+        <h2 id="ctxBudgetTitle">Context Budget</h2>
+        <button class="detail-x" id="ctxBudgetClose" type="button">✕</button>
+      </div>
+
+      <div class="ctx-budget-summary" id="ctxBudgetSummary">
+        <div class="ctx-budget-bar-wrap" id="ctxBudgetBarWrap">
+          <div class="ctx-budget-bar" id="ctxBudgetBar"></div>
+          <div class="ctx-budget-tooltip hidden" id="ctxBudgetTooltip"></div>
+        </div>
+        <div class="ctx-budget-total" id="ctxBudgetTotal">—</div>
+      </div>
+
+      <div class="ctx-budget-body" id="ctxBudgetBody">
+        <div class="ctx-budget-loading">Counting tokens...</div>
+      </div>
+
+      <div class="ctx-budget-footer">
+        <div class="ctx-budget-note" id="ctxBudgetNote">
+          Token counts are estimates. System overhead based on
+          <a href="https://github.com/anthropics/claude-code/issues/30103" target="_blank" rel="noopener">GitHub #30103</a>.
+        </div>
       </div>
     </div>
   </div>

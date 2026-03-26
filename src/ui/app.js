@@ -138,6 +138,7 @@ function setupUi() {
   setupCollapseAll();
   setupCcActions();
   setupExport();
+  setupContextBudget();
   setupResizers();
 }
 
@@ -155,6 +156,9 @@ function setupSidebarTree() {
     if (catRow) {
       selectedScopeId = catRow.dataset.scopeId;
       expandScopePath(selectedScopeId);
+      if (isContextBudgetOpen()) {
+        openContextBudget(selectedScopeId);
+      }
       const cat = catRow.dataset.cat;
       if (activeFilters.size === 1 && activeFilters.has(cat)) {
         activeFilters.clear();
@@ -180,7 +184,9 @@ function setupSidebarTree() {
     if (!hdr) return;
     selectedScopeId = hdr.dataset.scopeId;
     expandScopePath(selectedScopeId);
-    if (selectedItem && selectedItem.scopeId !== selectedScopeId) {
+    if (isContextBudgetOpen()) {
+      openContextBudget(selectedScopeId);
+    } else if (selectedItem && selectedItem.scopeId !== selectedScopeId) {
       closeDetail();
     }
     renderAll();
@@ -390,13 +396,22 @@ function setupResizers() {
 
 function setupResizer(resizerId, panelId, direction) {
   const resizer = document.getElementById(resizerId);
-  const panel = document.getElementById(panelId);
-  if (!resizer || !panel) return;
+  const defaultPanel = document.getElementById(panelId);
+  if (!resizer || !defaultPanel) return;
 
   let startX = 0;
   let startWidth = 0;
 
   resizer.addEventListener("mousedown", (event) => {
+    // For right resizer: resize whichever detail panel is currently visible
+    let panel = defaultPanel;
+    if (resizerId === "resizerRight") {
+      const budgetPanel = document.getElementById("ctxBudgetPanel");
+      if (budgetPanel && !budgetPanel.classList.contains("hidden")) {
+        panel = budgetPanel;
+      }
+    }
+
     startX = event.clientX;
     startWidth = panel.getBoundingClientRect().width;
     resizer.classList.add("active");
@@ -940,6 +955,324 @@ function setupExport() {
   });
 }
 
+function setupContextBudget() {
+  document.getElementById("ctxBudgetBtn").addEventListener("click", () => {
+    if (!selectedScopeId) {
+      toast("Select a scope first", true);
+      return;
+    }
+    openContextBudget(selectedScopeId);
+  });
+
+  document.getElementById("ctxBudgetClose").addEventListener("click", closeContextBudget);
+}
+
+function openContextBudget(scopeId) {
+  // Hide item detail panel, show context budget panel
+  document.getElementById("detailPanel").classList.add("hidden");
+  const panel = document.getElementById("ctxBudgetPanel");
+  panel.classList.remove("hidden");
+
+  const scope = getScopeById(scopeId);
+  document.getElementById("ctxBudgetTitle").textContent = `Context Budget — ${scope?.name || scopeId}`;
+  document.getElementById("ctxBudgetBody").innerHTML = `<div class="ctx-budget-loading">Counting tokens…</div>`;
+  document.getElementById("ctxBudgetBar").style.width = "0%";
+  document.getElementById("ctxBudgetTotal").textContent = "—";
+
+  fetchJson(`/api/context-budget?scope=${encodeURIComponent(scopeId)}`)
+    .then(renderContextBudget)
+    .catch(() => {
+      document.getElementById("ctxBudgetBody").innerHTML = `<div class="ctx-budget-loading">Failed to load context budget</div>`;
+    });
+}
+
+function closeContextBudget() {
+  document.getElementById("ctxBudgetPanel").classList.add("hidden");
+}
+
+function isContextBudgetOpen() {
+  return !document.getElementById("ctxBudgetPanel").classList.contains("hidden");
+}
+
+let _budgetData = null;
+let _budgetSort = "scope"; // "scope" | "category" | "tokens"
+let _budgetSortDir = "desc"; // "desc" (high→low) | "asc" (low→high)
+
+function renderContextBudget(budget) {
+  if (!budget.ok) {
+    document.getElementById("ctxBudgetBody").innerHTML = `<div class="ctx-budget-loading">${esc(budget.error || "Error")}</div>`;
+    return;
+  }
+
+  _budgetData = budget;
+
+  // Update progress bar
+  const pct = Math.min(budget.percentUsed, 100);
+  const bar = document.getElementById("ctxBudgetBar");
+  bar.style.width = `${pct}%`;
+  bar.className = `ctx-budget-bar ${pct > 50 ? "ctx-bar-warn" : ""} ${pct > 75 ? "ctx-bar-danger" : ""}`;
+
+  // Tooltip on hover
+  const barWrap = document.getElementById("ctxBudgetBarWrap");
+  const tooltip = document.getElementById("ctxBudgetTooltip");
+  tooltip.innerHTML = `<b>${formatTokens(budget.total)}</b> = ${formatTokens(budget.currentScope.total)} current + ${formatTokens(budget.inherited.total)} inherited + ${formatTokens(budget.systemOverhead.total)} system<br>Runtime injections (rules re-injection, file diffs, system reminders) are <b>not included</b> — actual mid-session usage will be higher.`;
+  barWrap.addEventListener("mouseenter", () => tooltip.classList.remove("hidden"));
+  barWrap.addEventListener("mouseleave", () => tooltip.classList.add("hidden"));
+
+  // Update total + explanation
+  // Cost estimate: Opus $15/M input, Sonnet $3/M input
+  const costOpus = (budget.total / 1_000_000 * 15).toFixed(2);
+  const costSonnet = (budget.total / 1_000_000 * 3).toFixed(2);
+  document.getElementById("ctxBudgetTotal").innerHTML = `
+    <b>${formatTokens(budget.total)}</b> of ${formatTokens(budget.contextLimit)} used
+    <span class="ctx-pct">(${budget.percentUsed}%)</span>
+    <span class="ctx-badge ctx-badge-${budget.method}">${budget.method}</span>
+    <div class="ctx-budget-explain">If you start a Claude Code session under this directory, <b>${formatTokens(budget.total)}</b> are already loaded before you start any conversation. Est. cost per session: <b>$${costOpus} USD</b> <span class="ctx-cost-label">Opus</span> · <b>$${costSonnet} USD</b> <span class="ctx-cost-label">Sonnet</span>
+    <br><br>The remaining <b>${(100 - budget.percentUsed).toFixed(1)}%</b> is shared between your messages, Claude's responses, and tool results before <a href="https://docs.anthropic.com/en/docs/build-with-claude/context-windows" target="_blank" rel="noopener">context compression</a> kicks in. The fuller the context, the less accurate Claude becomes — a well-documented effect known as <a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" target="_blank" rel="noopener">context rot</a>.</div>`;
+
+  // Update note with method info
+  const noteEl = document.getElementById("ctxBudgetNote");
+  noteEl.innerHTML = budget.method === "measured"
+    ? `Token counts via <b>ai-tokenizer</b> (99.79% accuracy). System overhead based on <a href="https://github.com/anthropics/claude-code/issues/30103" target="_blank" rel="noopener">GitHub #30103</a>.`
+    : `Token counts estimated (bytes/4). Install <code>ai-tokenizer</code> for 99.79% accuracy. System overhead based on <a href="https://github.com/anthropics/claude-code/issues/30103" target="_blank" rel="noopener">GitHub #30103</a>.`;
+
+  renderBudgetBody();
+}
+
+function renderBudgetBody() {
+  const budget = _budgetData;
+  if (!budget) return;
+  const body = document.getElementById("ctxBudgetBody");
+
+  // Tag items with their source for rendering
+  const allItems = [
+    ...budget.currentScope.items.map(i => ({ ...i, _source: "current", _sourceLabel: budget.scopeName })),
+    ...budget.inherited.items.map(i => ({ ...i, _source: "inherited", _sourceLabel: i.scopeName || i.scopeId })),
+  ];
+
+  // Sort controls
+  const arrow = _budgetSortDir === "desc" ? "↓" : "↑";
+  let html = `<div class="ctx-sort-bar">
+    <span class="ctx-sort-label">Sort:</span>
+    <button class="ctx-sort-btn ${_budgetSort === "scope" ? "active" : ""}" data-sort="scope">By Scope${_budgetSort === "scope" ? " " + arrow : ""}</button>
+    <button class="ctx-sort-btn ${_budgetSort === "category" ? "active" : ""}" data-sort="category">By Category${_budgetSort === "category" ? " " + arrow : ""}</button>
+    <button class="ctx-sort-btn ${_budgetSort === "tokens" ? "active" : ""}" data-sort="tokens">By Tokens${_budgetSort === "tokens" ? " " + arrow : ""}</button>
+  </div>`;
+
+  if (_budgetSort === "scope") {
+    html += renderByScope(budget, allItems);
+  } else if (_budgetSort === "category") {
+    html += renderByCategory(allItems);
+  } else {
+    html += renderByTokens(allItems);
+  }
+
+  // System Overhead (always at bottom)
+  html += renderSystemOverhead(budget);
+
+  body.innerHTML = html;
+
+  // Bind sort buttons — click same button toggles asc/desc
+  body.querySelectorAll(".ctx-sort-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (_budgetSort === btn.dataset.sort) {
+        _budgetSortDir = _budgetSortDir === "desc" ? "asc" : "desc";
+      } else {
+        _budgetSort = btn.dataset.sort;
+        _budgetSortDir = "desc";
+      }
+      renderBudgetBody();
+    });
+  });
+
+  // Bind collapsible toggles
+  body.querySelectorAll(".ctx-collapse-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const target = btn.closest(".ctx-section, .ctx-cat-group");
+      const items = target.querySelector(".ctx-section-items, .ctx-cat-items");
+      if (!items) return;
+      const hidden = items.classList.toggle("hidden");
+      btn.textContent = hidden ? "▸" : "▾";
+    });
+  });
+}
+
+function renderByScope(budget, allItems) {
+  let html = "";
+
+  // Group by scope — current first, then inherited from nearest parent to farthest
+  const groupOrder = []; // ordered list of scope IDs
+  const groups = {};
+
+  // Current scope first
+  groupOrder.push(budget.scopeId);
+  groups[budget.scopeId] = { label: `Current Scope`, items: [], total: budget.currentScope.total };
+
+  for (const item of allItems) {
+    if (item._source === "current") {
+      groups[budget.scopeId].items.push(item);
+    } else {
+      const key = item.scopeId || "unknown";
+      if (!groups[key]) {
+        groupOrder.push(key);
+        groups[key] = { label: `Inherited from ${item._sourceLabel}`, items: [], total: 0 };
+      }
+      groups[key].items.push(item);
+      groups[key].total += item.tokens;
+    }
+  }
+
+  // Reverse inherited scopes: API gives farthest→nearest, we want nearest→farthest
+  // Keep current scope at index 0, reverse the rest
+  const reordered = [groupOrder[0], ...groupOrder.slice(1).reverse()];
+
+  for (const scopeId of reordered) {
+    const group = groups[scopeId];
+    html += `<div class="ctx-section">
+      <div class="ctx-section-hdr">
+        <span class="ctx-collapse-btn">▾</span>
+        <span class="ctx-section-title">${esc(group.label)}</span>
+        <span class="ctx-section-total">${formatTokens(group.total)}</span>
+      </div>
+      <div class="ctx-section-items">${renderItemsByCategory(group.items, false)}</div>
+    </div>`;
+  }
+  return html;
+}
+
+function renderByCategory(allItems) {
+  let html = "";
+  const byCategory = {};
+  for (const item of allItems) {
+    const cat = item.category;
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(item);
+  }
+
+  for (const cat of CATEGORY_ORDER) {
+    const catItems = byCategory[cat];
+    if (!catItems) continue;
+    const catInfo = CATEGORIES[cat] || { icon: "📄", label: cat };
+    const catTotal = catItems.reduce((sum, i) => sum + i.tokens, 0);
+
+    html += `<div class="ctx-section">
+      <div class="ctx-section-hdr">
+        <span class="ctx-collapse-btn">▾</span>
+        <span class="ctx-section-title">${catInfo.icon} ${esc(catInfo.label)}</span>
+        <span class="ctx-section-total">${formatTokens(catTotal)}</span>
+      </div>
+      <div class="ctx-section-items">
+        ${sortByTokens(catItems).map(item => renderBudgetItem(item, catInfo.icon, true)).join("")}
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function sortByTokens(items) {
+  const dir = _budgetSortDir === "asc" ? 1 : -1;
+  return [...items].sort((a, b) => dir * (a.tokens - b.tokens));
+}
+
+function renderByTokens(allItems) {
+  const sorted = sortByTokens(allItems);
+  let html = `<div class="ctx-section">
+    <div class="ctx-section-hdr">
+      <span class="ctx-section-title">All Items</span>
+      <span class="ctx-section-total">${formatTokens(sorted.reduce((s, i) => s + i.tokens, 0))}</span>
+    </div>
+    <div class="ctx-section-items">
+      ${sorted.map(item => {
+        const catInfo = CATEGORIES[item.category] || { icon: "📄" };
+        return renderBudgetItem(item, catInfo.icon, true);
+      }).join("")}
+    </div>
+  </div>`;
+  return html;
+}
+
+function renderItemsByCategory(items, showSource) {
+  const byCategory = {};
+  for (const item of items) {
+    const cat = item.category;
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(item);
+  }
+
+  let html = "";
+  for (const cat of CATEGORY_ORDER) {
+    const catItems = byCategory[cat];
+    if (!catItems) continue;
+    const catInfo = CATEGORIES[cat] || { icon: "📄", label: cat };
+    const catTotal = catItems.reduce((sum, i) => sum + i.tokens, 0);
+
+    html += `<div class="ctx-cat-group">
+      <div class="ctx-cat-hdr">
+        <span class="ctx-collapse-btn">▸</span>
+        ${catInfo.icon} ${esc(catInfo.label)}
+        <span class="ctx-cat-total">${formatTokens(catTotal)}</span>
+      </div>
+      <div class="ctx-cat-items hidden">
+        ${sortByTokens(catItems).map(item => renderBudgetItem(item, catInfo.icon, showSource)).join("")}
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function renderBudgetItem(item, icon, showSource) {
+  const sourceTag = showSource
+    ? `<span class="ctx-item-source">${item._source === "current" ? "current" : esc(item._sourceLabel)}</span>`
+    : "";
+  return `<div class="ctx-item">
+    <span class="ctx-item-icon">${icon}</span>
+    <span class="ctx-item-name" title="${esc(item.path || "")}">${esc(item.name)}</span>
+    ${sourceTag}
+    <span class="ctx-item-tokens">${formatTokens(item.tokens)}</span>
+  </div>`;
+}
+
+function renderSystemOverhead(budget) {
+  return `<div class="ctx-section">
+    <div class="ctx-section-hdr">
+      <span class="ctx-collapse-btn">▸</span>
+      <span class="ctx-section-title">System Overhead</span>
+      <span class="ctx-section-total">${formatTokens(budget.systemOverhead.total)}</span>
+      <span class="ctx-badge ctx-badge-estimated">estimated</span>
+    </div>
+    <div class="ctx-section-items hidden">
+      <div class="ctx-item">
+        <span class="ctx-item-icon">🔧</span>
+        <span class="ctx-item-name">Base scaffold (system prompt + tools)</span>
+        <span class="ctx-item-tokens">${formatTokens(budget.systemOverhead.base)}</span>
+      </div>
+      ${budget.systemOverhead.mcpServers > 0 ? `
+      <div class="ctx-item">
+        <span class="ctx-item-icon">🔌</span>
+        <span class="ctx-item-name">MCP servers (${budget.systemOverhead.mcpServers} defined × ~1.5K avg)</span>
+        <span class="ctx-item-tokens">${formatTokens(budget.systemOverhead.mcpEstimate)}</span>
+      </div>` : ""}
+    </div>
+  </div>
+  <div class="ctx-section ctx-section-runtime">
+    <div class="ctx-section-hdr">
+      <span class="ctx-section-title">Runtime Injections</span>
+      <span class="ctx-section-total">unknown</span>
+    </div>
+    <div class="ctx-runtime-note">The numbers above only reflect what is loaded at session start. During a session, Claude Code injects additional tokens that we cannot measure offline:<ul class="ctx-runtime-list">
+      <li><b>Rule re-injection</b> — all rule files are re-injected after every tool call. After ~30 tool calls this alone can consume ~46% of context (<a href="https://github.com/anthropics/claude-code/issues/32057" target="_blank" rel="noopener">#32057</a>)</li>
+      <li><b>File change diffs</b> — when files you've read or written are modified externally (e.g. by a linter), the full diff is injected as a hidden system-reminder</li>
+      <li><b>System reminders</b> — malware warnings, token usage nudges, and other hidden injections on every message (<a href="https://github.com/anthropics/claude-code/issues/17601" target="_blank" rel="noopener">#17601</a>)</li>
+      <li><b>Conversation history</b> — your messages + Claude's responses + all tool results are resent on every API call</li>
+    </ul>Your actual token usage mid-session will be significantly higher than the pre-session estimate shown above.</div>
+  </div>`;
+}
+
+function formatTokens(n) {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K tok`;
+  return `${n} tok`;
+}
+
 function renderBreadcrumb(scope) {
   if (!scope) return `<span class="crumb-pill">Unknown scope</span>`;
   const scopes = [...getScopeChain(scope), scope];
@@ -1110,6 +1443,7 @@ function showDetail(item) {
   const next = getItemByKey(itemKey(item)) || item;
   const shouldLoadPreview = itemKey(next) !== detailPreviewKey;
   selectedItem = next;
+  closeContextBudget();
   document.getElementById("detailPanel").classList.remove("hidden");
   renderDetailPanel(shouldLoadPreview);
   updateSelectedItemHighlight();

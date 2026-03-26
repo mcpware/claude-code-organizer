@@ -12,6 +12,7 @@ import { createRequire } from "node:module";
 import https from "node:https";
 import { scan } from "./scanner.mjs";
 import { moveItem, deleteItem, getValidDestinations } from "./mover.mjs";
+import { countTokens, getMethod } from "./tokenizer.mjs";
 
 // ── Update check ─────────────────────────────────────────────────────
 async function checkForUpdate() {
@@ -129,6 +130,123 @@ async function handleRequest(req, res) {
   if (path === "/api/scan" && req.method === "GET") {
     const data = await freshScan();
     return json(res, data);
+  }
+
+  // GET /api/context-budget?scope=<id> — token budget breakdown for a scope
+  if (path === "/api/context-budget" && req.method === "GET") {
+    const scopeId = url.searchParams.get("scope");
+    if (!scopeId) return json(res, { ok: false, error: "Missing scope parameter" }, 400);
+
+    if (!cachedData) await freshScan();
+
+    const scope = cachedData.scopes.find(s => s.id === scopeId);
+    if (!scope) return json(res, { ok: false, error: "Scope not found" }, 400);
+
+    // Collect parent chain (for inherited items)
+    const parentIds = [];
+    let cur = scope;
+    while (cur.parentId) {
+      parentIds.push(cur.parentId);
+      cur = cachedData.scopes.find(s => s.id === cur.parentId);
+      if (!cur) break;
+    }
+
+    // Categories that Claude loads into context at session start
+    // Sessions and plugins are NOT loaded into context
+    const CONTEXT_CATEGORIES = new Set(["memory", "skill", "config", "mcp", "rule", "command", "agent", "hook"]);
+
+    // Tokenize items for a set of scope IDs, return per-item breakdown
+    async function tokenizeItems(scopeIds) {
+      const items = cachedData.items.filter(
+        i => scopeIds.includes(i.scopeId) && CONTEXT_CATEGORIES.has(i.category)
+      );
+      const results = [];
+
+      for (const item of items) {
+        let text = "";
+        try {
+          if (item.category === "mcp") {
+            // MCP: tokenize the config JSON (name-only placeholders at startup)
+            text = JSON.stringify(item.mcpConfig || {}, null, 2);
+          } else if (item.category === "hook") {
+            // Hooks: tokenize the hook command/prompt
+            text = item.description || "";
+          } else if (item.category === "skill") {
+            // Skills load name + description only (not full SKILL.md)
+            text = `${item.name}\n${item.description || ""}`;
+          } else if (item.path) {
+            // Memory, config, rule, command, agent: read file content
+            text = await readFile(item.path, "utf-8");
+          }
+        } catch {
+          // File unreadable — use empty string
+        }
+
+        const { tokens, confidence } = await countTokens(text);
+        const scopeObj = cachedData.scopes.find(s => s.id === item.scopeId);
+        results.push({
+          category: item.category,
+          subType: item.subType,
+          name: item.name,
+          path: item.path,
+          tokens,
+          confidence,
+          sizeBytes: item.sizeBytes || 0,
+          scopeId: item.scopeId,
+          scopeName: scopeObj?.name || item.scopeId,
+        });
+      }
+
+      return results;
+    }
+
+    const [currentItems, inheritedItems, method] = await Promise.all([
+      tokenizeItems([scopeId]),
+      tokenizeItems(parentIds),
+      getMethod(),
+    ]);
+
+    // System overhead: ~21K immutable scaffold (GitHub #30103)
+    const SYSTEM_OVERHEAD = 21000;
+
+    // MCP overhead estimate: count defined servers × rough average
+    // Light server ~1.5K tokens, we use this as conservative estimate
+    const mcpServerCount = cachedData.items.filter(
+      i => i.category === "mcp" && (i.scopeId === scopeId || parentIds.includes(i.scopeId))
+    ).length;
+    const mcpOverhead = mcpServerCount * 1500;
+
+    const currentTotal = currentItems.reduce((sum, i) => sum + i.tokens, 0);
+    const inheritedTotal = inheritedItems.reduce((sum, i) => sum + i.tokens, 0);
+    const total = currentTotal + inheritedTotal + SYSTEM_OVERHEAD + mcpOverhead;
+
+    const CONTEXT_LIMIT = 200000;
+
+    return json(res, {
+      ok: true,
+      scopeId,
+      scopeName: scope.name,
+      currentScope: {
+        items: currentItems,
+        total: currentTotal,
+      },
+      inherited: {
+        items: inheritedItems,
+        total: inheritedTotal,
+      },
+      systemOverhead: {
+        base: SYSTEM_OVERHEAD,
+        mcpServers: mcpServerCount,
+        mcpEstimate: mcpOverhead,
+        total: SYSTEM_OVERHEAD + mcpOverhead,
+        confidence: "estimated",
+        citation: "GitHub #30103, ClaudeCodeCamp measurements",
+      },
+      total,
+      contextLimit: CONTEXT_LIMIT,
+      percentUsed: Math.round((total / CONTEXT_LIMIT) * 1000) / 10,
+      method,
+    });
   }
 
   // POST /api/move — move an item to a different scope

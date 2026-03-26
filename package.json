@@ -53,5 +53,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2"
+  },
+  "optionalDependencies": {
+    "ai-tokenizer": "^1.0.6"
   }
 }

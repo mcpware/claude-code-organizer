@@ -2293,3 +2293,161 @@ test.describe('Sidebar UX', () => {
     await expect(page.locator('.s-scope-hdr[data-scope-id="global"]')).toBeVisible();
   });
 });
+
+// ── Context Budget ──────────────────────────────────────────────────
+
+test.describe('Context Budget', () => {
+
+  test('API returns valid context budget for global scope', async ({ page }) => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/context-budget?scope=global`);
+    const budget = await res.json();
+
+    expect(budget.ok).toBe(true);
+    expect(budget.scopeId).toBe('global');
+    expect(budget.scopeName).toBe('Global');
+    expect(budget.currentScope.items.length).toBeGreaterThan(0);
+    expect(budget.currentScope.total).toBeGreaterThan(0);
+    expect(budget.inherited.total).toBe(0); // global has no parents
+    expect(budget.systemOverhead.base).toBe(21000);
+    expect(budget.total).toBeGreaterThan(21000);
+    expect(budget.contextLimit).toBe(200000);
+    expect(budget.percentUsed).toBeGreaterThan(0);
+    expect(['measured', 'estimated']).toContain(budget.method);
+
+    env.cleanup();
+  });
+
+  test('API returns inherited items for nested scope', async ({ page }) => {
+    const env = await createTestEnv();
+    // Find the workspace scope ID
+    const scanRes = await fetch(`${env.baseURL}/api/scan`);
+    const scanData = await scanRes.json();
+    const workspaceScope = scanData.scopes.find(s => s.name === 'workspace');
+    expect(workspaceScope).toBeTruthy();
+
+    const res = await fetch(`${env.baseURL}/api/context-budget?scope=${workspaceScope.id}`);
+    const budget = await res.json();
+
+    expect(budget.ok).toBe(true);
+    expect(budget.inherited.items.length).toBeGreaterThan(0); // inherits from global
+    expect(budget.inherited.total).toBeGreaterThan(0);
+
+    env.cleanup();
+  });
+
+  test('API returns per-item token counts with confidence', async ({ page }) => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/context-budget?scope=global`);
+    const budget = await res.json();
+
+    for (const item of budget.currentScope.items) {
+      expect(item).toHaveProperty('name');
+      expect(item).toHaveProperty('tokens');
+      expect(item).toHaveProperty('confidence');
+      expect(item.tokens).toBeGreaterThanOrEqual(0);
+      expect(['measured', 'estimated']).toContain(item.confidence);
+    }
+
+    env.cleanup();
+  });
+
+  test('API returns 400 for missing scope parameter', async ({ page }) => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/context-budget`);
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+
+    env.cleanup();
+  });
+
+  test('API returns 400 for unknown scope', async ({ page }) => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/context-budget?scope=does-not-exist`);
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+
+    env.cleanup();
+  });
+
+  test('UI shows Context Budget button and opens panel', async ({ page }) => {
+    const env = await createTestEnv();
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+
+    // Click a scope to select it
+    await page.locator('.s-scope-hdr[data-scope-id="global"]').click();
+    await page.waitForTimeout(200);
+
+    // Context Budget button should be visible
+    const btn = page.locator('#ctxBudgetBtn');
+    await expect(btn).toBeVisible();
+
+    // Click it
+    await btn.click();
+
+    // Context Budget panel should appear
+    const panel = page.locator('#ctxBudgetPanel');
+    await expect(panel).toBeVisible();
+
+    // Item detail panel should be hidden
+    await expect(page.locator('#detailPanel')).toBeHidden();
+
+    // Wait for data to load
+    await page.waitForSelector('.ctx-section', { timeout: 15000 });
+
+    // Should show sections
+    const sections = await page.locator('.ctx-section').count();
+    expect(sections).toBeGreaterThanOrEqual(2); // current scope + system overhead
+
+    // Should show progress bar
+    await expect(page.locator('.ctx-budget-bar')).toBeVisible();
+
+    // Should show total
+    const totalText = await page.locator('#ctxBudgetTotal').textContent();
+    expect(totalText).toContain('tok');
+
+    env.cleanup();
+  });
+
+  test('UI closes Context Budget panel when clicking an item', async ({ page }) => {
+    const env = await createTestEnv();
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+
+    // Select global scope and open context budget
+    await page.locator('.s-scope-hdr[data-scope-id="global"]').click();
+    await page.waitForTimeout(200);
+    await page.locator('#ctxBudgetBtn').click();
+    await expect(page.locator('#ctxBudgetPanel')).toBeVisible();
+
+    // Click an item in the list
+    const firstItem = page.locator('.item').first();
+    await firstItem.click();
+
+    // Budget panel should close, item detail should open
+    await expect(page.locator('#ctxBudgetPanel')).toBeHidden();
+    await expect(page.locator('#detailPanel')).toBeVisible();
+
+    env.cleanup();
+  });
+
+  test('UI closes Context Budget panel with X button', async ({ page }) => {
+    const env = await createTestEnv();
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+
+    await page.locator('.s-scope-hdr[data-scope-id="global"]').click();
+    await page.waitForTimeout(200);
+    await page.locator('#ctxBudgetBtn').click();
+    await expect(page.locator('#ctxBudgetPanel')).toBeVisible();
+
+    // Close via X button
+    await page.locator('#ctxBudgetClose').click();
+    await expect(page.locator('#ctxBudgetPanel')).toBeHidden();
+
+    env.cleanup();
+  });
+});

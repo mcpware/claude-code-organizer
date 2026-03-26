@@ -62,6 +62,7 @@ We analyzed the source code of every Claude Code tool we could find — analytic
 | Undo on every action | **Yes** | No | No | No | No |
 | Bulk operations | **Yes** | No | No | No | No |
 | Real MCP server management | **Yes** | Global only | Stub (icon only) | No | No |
+| Context budget (token breakdown) | **Yes** | No | No | No | No |
 | Commands + Agents + Rules | **Yes** | No | No | No | No |
 | Session management | **Yes** | No | No | Yes | Yes |
 | Search & filter | **Yes** | No | Yes | Yes | No |
@@ -77,6 +78,7 @@ We analyzed the source code of every Claude Code tool we could find — analytic
 - **Bulk operations** — Select mode: tick multiple items, move or delete all at once
 - **Same-type safety** — Each category moves to its own directory — memories to memory/, skills to skills/, commands to commands/, etc.
 - **Search & filter** — Real-time search across all items, filter by category with smart pill hiding (zero-count pills collapse into "+N more")
+- **Context Budget** — See exactly how many tokens your config consumes before you type anything — per-item breakdown, inherited scope costs, system overhead estimate, and % of 200K context used
 - **Detail panel** — Click any item to see full metadata, content preview, file path, and open in VS Code
 - **Session inspector** — Parsed conversation previews with speaker labels, session titles, and metadata
 - **11 categories** — Memories, skills, MCP servers, commands, agents, rules, configs, hooks, plugins, plans, and sessions
@@ -87,7 +89,7 @@ We analyzed the source code of every Claude Code tool we could find — analytic
 - **Real file moves** — Actually moves files in `~/.claude/`, not just a viewer
 - **Path traversal protection** — All file endpoints validate paths are within HOME directory
 - **Cross-device support** — Automatic copy+delete fallback when rename fails across filesystems (Docker/WSL)
-- **92 E2E tests** — Playwright test suite covering filesystem verification, security (path traversal, malformed input), and all 11 categories
+- **100+ E2E tests** — Playwright test suite covering filesystem verification, security (path traversal, malformed input), context budget, and all 11 categories
 
 ## Why a Visual Dashboard?
 
@@ -101,6 +103,19 @@ Claude Code can already list and move files via CLI — but you're stuck playing
 | **Read config content** | `cat` each file one by one | Click → side panel |
 | **Find duplicates / stale items** | `grep` across cryptic directories | Search + filter by category |
 | **Clean up unused memories** | Figure out which files to delete | Browse, read, delete in-place |
+
+## Context Budget
+
+Every Claude Code session silently loads your configs into the context window before you type anything. Memories, CLAUDE.md, skills, MCP servers, settings — it all adds up. Research shows that **21.8% of tokens in typical sessions are structural waste** ([arXiv 2603.09023](https://arxiv.org/abs/2603.09023)), and every model's accuracy degrades as context grows ([Chroma Study, 2025](https://www.trychroma.com/research/context-rot)).
+
+Click **Context Budget** in the scope header to see:
+
+- **Current Scope** — every item in your selected project, with exact token count and file path
+- **Inherited** — everything loaded from parent scopes (global → workspace → project)
+- **System Overhead** — estimated ~21K token base scaffold ([GitHub #30103](https://github.com/anthropics/claude-code/issues/30103)) + MCP server definitions
+- **Total** — progress bar showing % of 200K context used before you start working
+
+Token counts use [ai-tokenizer](https://www.npmjs.com/package/ai-tokenizer) (99.79% accuracy for Claude) when installed, or bytes/4 estimation as fallback. Every number is labeled "measured" or "estimated" so you know exactly what you're looking at.
 
 ## Quick Start
 
