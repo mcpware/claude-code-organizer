@@ -648,7 +648,51 @@ async function handleRequest(req, res) {
 // ── Start server ─────────────────────────────────────────────────────
 
 export function startServer(port = 3847, maxRetries = 10) {
+  // ── Auto-shutdown when all browser tabs close (#2) ──
+  // Uses SSE heartbeat: browser opens /heartbeat connection, server tracks
+  // active clients. When all disconnect, starts idle countdown.
+  const IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 min safety net
+  const clients = new Set();
+  let idleTimer = null;
+
+  function startIdleTimer() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      console.log("\nAll browser tabs closed. Shutting down after 5 minutes of inactivity.");
+      console.log("Run again anytime with /cco or npx @mcpware/claude-code-organizer\n");
+      process.exit(0);
+    }, IDLE_TIMEOUT_MS);
+  }
+
+  function cancelIdleTimer() {
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  }
+
   const server = createServer(async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+
+    // SSE heartbeat endpoint — tracks connected browser tabs
+    if (url.pathname === "/heartbeat") {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      });
+      res.write(": connected\n\n");
+
+      clients.add(res);
+      cancelIdleTimer();
+
+      const keepalive = setInterval(() => res.write(": ping\n\n"), 30000);
+
+      req.on("close", () => {
+        clearInterval(keepalive);
+        clients.delete(res);
+        if (clients.size === 0) startIdleTimer();
+      });
+      return;
+    }
+
     try {
       await handleRequest(req, res);
     } catch (err) {
@@ -665,7 +709,9 @@ export function startServer(port = 3847, maxRetries = 10) {
       console.log(`Made by a CS dropout with no mass, no team, no budget \u2014 just Claude Code and ADHD.`);
       console.log(`This is my first open-source project. If it helped you, a star would make my week:`);
       console.log(`\u2B50 https://github.com/mcpware/claude-code-organizer`);
-      console.log(`\uD83D\uDCEC Bugs, ideas, or just wanna say hi? https://github.com/mcpware/claude-code-organizer/issues \u2014 I fix things same day, I promise\n`);
+      console.log(`\uD83D\uDCEC Bugs, ideas, or just wanna say hi? https://github.com/mcpware/claude-code-organizer/issues \u2014 I fix things same day, I promise`);
+      console.log(`\nPress Ctrl+C to stop. Server auto-shuts down when you close all browser tabs.\n`);
+      startIdleTimer(); // safety net in case no browser connects
       // Non-blocking update check
       checkForUpdate().catch(() => {});
     });
