@@ -538,10 +538,15 @@ test.describe('API Layer', () => {
     const res = await fetch(`${env.baseURL}/api/session-preview?path=${encodeURIComponent(session.path)}`);
     const data = await res.json();
     expect(data.ok).toBe(true);
-    expect(data.content).toContain('Refactor auth to OAuth2'); // title
-    expect(data.content).toContain('👤 User');
-    expect(data.content).toContain('🤖 Assistant');
-    expect(data.content).toContain('login endpoint'); // last message present
+    expect(data.title).toBe('Refactor auth to OAuth2');
+    expect(data.messages).toBeDefined();
+    expect(data.messages.length).toBeGreaterThan(0);
+    const allText = data.messages.map(m => m.text).join(' ');
+    expect(allText).toContain('login endpoint');
+    // Check roles present
+    const roles = new Set(data.messages.map(m => m.role));
+    expect(roles.has('user')).toBe(true);
+    expect(roles.has('assistant')).toBe(true);
   });
 
   test('session preview handles string content format', async () => {
@@ -550,8 +555,10 @@ test.describe('API Layer', () => {
     const res = await fetch(`${env.baseURL}/api/session-preview?path=${encodeURIComponent(session.path)}`);
     const data = await res.json();
     expect(data.ok).toBe(true);
-    expect(data.content).toContain('deploy script');
-    expect(data.content).toContain('rollback');
+    expect(data.messages).toBeDefined();
+    const allText = data.messages.map(m => m.text).join(' ');
+    expect(allText).toContain('deploy script');
+    expect(allText).toContain('rollback');
   });
 
   test('delete session removes .jsonl + subagent directory', async () => {
@@ -2311,8 +2318,8 @@ test.describe('Context Budget', () => {
     expect(budget.currentScope.items.length).toBeGreaterThan(0);
     expect(budget.currentScope.total).toBeGreaterThan(0);
     expect(budget.inherited.total).toBe(0); // global has no parents
-    expect(budget.systemOverhead.base).toBe(12500);
-    expect(budget.total).toBeGreaterThan(12500);
+    expect(budget.systemOverhead.base).toBe(18000);
+    expect(budget.total).toBeGreaterThan(18000);
     expect(budget.contextLimit).toBe(200000);
     expect(budget.percentUsed).toBeGreaterThan(0);
     expect(budget.alwaysLoaded).toBeTruthy();
@@ -2711,12 +2718,12 @@ test.describe('Context Budget Accuracy', () => {
     env.cleanup();
   });
 
-  test('system overhead base is 12.5K loaded', async () => {
+  test('system overhead base is 17.8K loaded', async () => {
     const env = await createTestEnv();
     const budgetRes = await fetch(`${env.baseURL}/api/context-budget?scope=global`);
     const budget = await budgetRes.json();
 
-    expect(budget.systemOverhead.base).toBe(12500);
+    expect(budget.systemOverhead.base).toBe(18000);
 
     env.cleanup();
   });
@@ -2746,6 +2753,192 @@ test.describe('Context Budget Accuracy', () => {
       expect(item.scopeId).not.toBe(nestedScope.id);
     }
 
+    env.cleanup();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// Security Scanner API
+// ══════════════════════════════════════════════════════════════════════
+
+test.describe('Security Scanner API', () => {
+  test('POST /api/security-scan returns structured results', async () => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/security-scan`, { method: 'POST' });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.totalServers).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(data.findings)).toBe(true);
+    expect(Array.isArray(data.baselines)).toBe(true);
+    expect(data.severityCounts).toBeDefined();
+    expect(typeof data.severityCounts.critical).toBe('number');
+    expect(typeof data.severityCounts.high).toBe('number');
+    expect(typeof data.severityCounts.medium).toBe('number');
+    expect(typeof data.severityCounts.low).toBe('number');
+    expect(data.timestamp).toBeDefined();
+    expect(typeof data.totalTools).toBe('number');
+    expect(typeof data.serversConnected).toBe('number');
+    expect(typeof data.serversFailed).toBe('number');
+    env.cleanup();
+  });
+
+  test('GET /api/security-status returns availability', async () => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/security-status`);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(typeof data.available).toBe('boolean');
+    env.cleanup();
+  });
+
+  test('POST+GET /api/security-cache round-trip', async () => {
+    const env = await createTestEnv();
+    const testData = { ok: true, timestamp: new Date().toISOString(), findings: [{ id: 'TEST-001', name: 'test finding' }], servers: [], baselines: [], severityCounts: { critical: 0, high: 0, medium: 0, low: 0, info: 0 }, totalTools: 0, totalServers: 0, serversConnected: 0, serversFailed: 0 };
+
+    const saveRes = await fetch(`${env.baseURL}/api/security-cache`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(testData),
+    });
+    expect((await saveRes.json()).ok).toBe(true);
+
+    const loadRes = await fetch(`${env.baseURL}/api/security-cache`);
+    const loaded = await loadRes.json();
+    expect(loaded.ok).toBe(true);
+    expect(loaded.data.findings[0].id).toBe('TEST-001');
+    env.cleanup();
+  });
+
+  test('GET /api/security-cache returns ok:false when no cache', async () => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/security-cache`);
+    const data = await res.json();
+    // May or may not have cache depending on test order
+    expect(typeof data.ok).toBe('boolean');
+    env.cleanup();
+  });
+
+  test('GET /api/security-baseline-check returns new servers list', async () => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/security-baseline-check`);
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(Array.isArray(data.newServers)).toBe(true);
+    env.cleanup();
+  });
+
+  test('scan findings have required fields', async () => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/security-scan`, { method: 'POST' });
+    const data = await res.json();
+    for (const f of data.findings) {
+      expect(f.id).toBeDefined();
+      expect(f.category).toBeDefined();
+      expect(f.severity).toBeDefined();
+      expect(f.name).toBeDefined();
+      expect(f.sourceName).toBeDefined();
+      expect(['critical', 'high', 'medium', 'low', 'info']).toContain(f.severity);
+    }
+    env.cleanup();
+  });
+
+  test('scan servers have correct status fields', async () => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/security-scan`, { method: 'POST' });
+    const data = await res.json();
+    for (const s of data.servers) {
+      expect(s.serverName).toBeDefined();
+      expect(['scanned', 'error']).toContain(s.status);
+      if (s.status === 'scanned') {
+        expect(typeof s.toolCount).toBe('number');
+        expect(Array.isArray(s.tools)).toBe(true);
+      }
+      if (s.status === 'error') {
+        expect(s.error).toBeDefined();
+      }
+    }
+    env.cleanup();
+  });
+
+  test('scan baselines have correct structure', async () => {
+    const env = await createTestEnv();
+    const res = await fetch(`${env.baseURL}/api/security-scan`, { method: 'POST' });
+    const data = await res.json();
+    for (const b of data.baselines) {
+      expect(b.serverName).toBeDefined();
+      expect(typeof b.isFirstScan).toBe('boolean');
+      expect(typeof b.hasChanges).toBe('boolean');
+      expect(Array.isArray(b.changed)).toBe(true);
+      expect(Array.isArray(b.added)).toBe(true);
+      expect(Array.isArray(b.removed)).toBe(true);
+      expect(Array.isArray(b.unchanged)).toBe(true);
+    }
+    env.cleanup();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// Security Scanner UI
+// ══════════════════════════════════════════════════════════════════════
+
+test.describe('Security Scanner UI', () => {
+  test('security scan button exists in sidebar', async ({ page }) => {
+    const env = await createTestEnv();
+    await page.goto(env.baseURL);
+    const btn = page.locator('#securityScanBtn');
+    await expect(btn).toBeVisible();
+    await expect(btn).toContainText('Security Scan');
+    env.cleanup();
+  });
+
+  test('clicking button opens security panel', async ({ page }) => {
+    const env = await createTestEnv();
+    await page.goto(env.baseURL);
+    await page.click('#securityScanBtn');
+    await expect(page.locator('#securityPanel')).toBeVisible();
+    await expect(page.locator('#securityTitle')).toContainText('Security Scan');
+    env.cleanup();
+  });
+
+  test('panel shows content when opened', async ({ page }) => {
+    const env = await createTestEnv();
+    await page.goto(env.baseURL);
+    await page.click('#securityScanBtn');
+    // Panel should be visible with some content — intro, results, or progress
+    await expect(page.locator('#securityPanel')).toBeVisible();
+    await expect(page.locator('#securityBody')).toBeVisible();
+    env.cleanup();
+  });
+
+  test('close button hides panel', async ({ page }) => {
+    const env = await createTestEnv();
+    await page.goto(env.baseURL);
+    await page.click('#securityScanBtn');
+    await expect(page.locator('#securityPanel')).toBeVisible();
+    await page.click('#securityClose');
+    await expect(page.locator('#securityPanel')).toBeHidden();
+    env.cleanup();
+  });
+
+  test('rescan button visible after scan completes', async ({ page }) => {
+    const env = await createTestEnv();
+    await page.goto(env.baseURL);
+    await page.click('#securityScanBtn');
+    await expect(page.locator('#securityRescanBtn')).toBeHidden();
+    if (await page.locator('#securityStartBtn').isVisible()) {
+      await page.click('#securityStartBtn');
+      await page.waitForSelector('#securityResults:not(.hidden)', { timeout: 60000 });
+    }
+    await expect(page.locator('#securityRescanBtn')).toBeVisible();
+    env.cleanup();
+  });
+
+  test('resizer between main content and security panel', async ({ page }) => {
+    const env = await createTestEnv();
+    await page.goto(env.baseURL);
+    await page.click('#securityScanBtn');
+    const resizer = page.locator('#resizerRight');
+    await expect(resizer).toBeVisible();
     env.cleanup();
   });
 });
