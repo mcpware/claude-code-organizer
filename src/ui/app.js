@@ -2786,7 +2786,8 @@ function renderSecurityResults(scanData) {
           persistence: "Persistence", cross_server_ref: "Cross-Server",
           mcp_config: "MCP Config", external: "Security",
         }[f.category] || f.category;
-        html += `<span class="sec-category-label">${esc(categoryLabel)}</span>`;
+        const ruleId = (f.id && f.id !== "EXT") ? `${f.id} · ` : "";
+        html += `<span class="sec-category-label">${esc(ruleId + categoryLabel)}</span>`;
         html += `</div>`;
         // Description
         if (f.description) {
