@@ -39,6 +39,8 @@ Other tools solve these one at a time. **CCO solves them in one loop:**
 
 <sub>Four panels working together: scope tree, MCP server list with security badges, detail inspector, and security scan findings — click any finding to navigate directly to the server</sub>
 
+**The difference from standalone scanners:** When CCO finds something, you click the finding and land on the MCP server entry in the scope tree. Delete it, move it, or inspect its config — without switching tools.
+
 ```bash
 npx @mcpware/claude-code-organizer
 ```
@@ -100,11 +102,6 @@ CCO connects to every MCP server, retrieves actual tool definitions, and runs th
 - **SHA256 hash baselines** — if a server's tools change between scans, you see a CHANGED badge immediately
 - **NEW / CHANGED / UNREACHABLE** status badges on every MCP item
 
-**The difference from standalone scanners:** When CCO finds something, you click the finding and land on the MCP server entry in the scope tree. Delete it, move it, or inspect its config — without switching tools.
-
-![Security Scan Button](docs/securitybutton.png)
-
-<sub>New MCP servers detected — shimmer effect prompting a rescan</sub>
 
 ## Quick Start
 
