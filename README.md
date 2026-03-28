@@ -105,26 +105,28 @@ CCO connects to every MCP server, retrieves actual tool definitions, and runs th
 
 ## Quick Start
 
-### Option 1: npx (no install needed)
+### Option 1: Paste into Claude Code (recommended)
+
+```
+Run npx @mcpware/claude-code-organizer and tell me the URL when it's ready.
+```
+
+Claude will install and launch the dashboard for you. First run auto-installs a `/cco` skill — after that, just type `/cco` in any session to reopen.
+
+### Option 2: npx (from terminal)
 
 ```bash
 npx @mcpware/claude-code-organizer
 ```
 
-### Option 2: Global install
+### Option 3: Global install
 
 ```bash
 npm install -g @mcpware/claude-code-organizer
 claude-code-organizer
 ```
 
-### Option 3: Ask Claude
-
-Paste this into Claude Code:
-
-> Run `npx @mcpware/claude-code-organizer` — it's a dashboard for managing all Claude Code resources. Tell me the URL when it's ready.
-
-Opens at `http://localhost:3847`. Next time, just type `/cco`.
+Opens at `http://localhost:3847`. The `/cco` skill is auto-installed on first run.
 
 ## What It Manages
 
