@@ -618,11 +618,13 @@ const PATTERNS = [
 
   { id: "CH-009", category: "credential_harvest", severity: "critical", name: "Credential read-then-send",
     description: "Pattern of reading credentials then sending them externally",
-    regex: /\b(read|get|cat|access|exfiltrate)\b.{0,120}\b(api[_\s]?key|secret[_\s]?key|token|password|passphrase)\b/i },
+    // Tightened: removed "access" (too generic, FPs on "access level, password protection"),
+    // reduced range from 120 to 40 chars, require more specific action verbs
+    regex: /\b(read|cat|exfiltrate|steal|dump|extract)\b.{0,40}\b(api[_\s]?key|secret[_\s]?key|token|password|passphrase)\b/i },
 
   { id: "CH-010", category: "credential_harvest", severity: "critical", name: "Credential send-after-read",
     description: "Pattern of obtaining credentials then transmitting them",
-    regex: /\b(api[_\s]?key|secret[_\s]?key|access[_\s]?token)\b.{0,120}\b(send|post|upload|pass|include)\b/i },
+    regex: /\b(api[_\s]?key|secret[_\s]?key|access[_\s]?token)\b.{0,40}\b(send|post|upload|exfiltrate|transmit)\b/i },
 
   { id: "CH-011", category: "credential_harvest", severity: "high", name: "MCP config file access",
     description: "Attempts to read MCP configuration files containing server credentials",
@@ -1148,7 +1150,16 @@ export async function runSecurityScan(introspectionResults, scanData) {
   }
 
   // Cross-server tool reference detection (MCPR-103)
-  const MIN_CROSS_REF_NAME_LEN = 4; // AgentSeal: skip short names to reduce FP
+  // AgentSeal uses 4 — but common tool names like "search", "fill", "click", "hover"
+  // cause massive false positives. Raised to 8 + common word exclusion.
+  const MIN_CROSS_REF_NAME_LEN = 8;
+  const COMMON_TOOL_WORDS = new Set([
+    "search", "find", "get", "list", "read", "write", "create", "update", "delete",
+    "fill", "click", "drag", "hover", "type", "press", "scroll", "select", "submit",
+    "open", "close", "save", "load", "run", "start", "stop", "check", "test",
+    "send", "post", "fetch", "query", "collect", "extract", "parse", "format",
+    "navigate", "browse", "download", "upload", "sync", "push", "pull",
+  ]);
   for (const server of introspectionResults.filter(s => s.ok)) {
     for (const tool of server.tools) {
       if (!tool.description) continue;
@@ -1156,10 +1167,11 @@ export async function runSecurityScan(introspectionResults, scanData) {
       for (const otherServer of introspectionResults.filter(s => s.ok && s.serverName !== server.serverName)) {
         for (const otherTool of otherServer.tools) {
           if (otherTool.name.length < MIN_CROSS_REF_NAME_LEN) continue;
+          if (COMMON_TOOL_WORDS.has(otherTool.name.toLowerCase())) continue;
           const nameRegex = new RegExp(`\\b${otherTool.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "i");
           if (nameRegex.test(descLower)) {
             allFindings.push({
-              id: "TS-009", category: "tool_shadowing", severity: "high",
+              id: "TS-009", category: "tool_shadowing", severity: "medium",
               name: "Cross-server tool reference",
               description: `Tool "${tool.name}" on "${server.serverName}" references tool "${otherTool.name}" from "${otherServer.serverName}". This could indicate tool shadowing.`,
               sourceType: "cross_server",
