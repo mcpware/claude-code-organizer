@@ -1303,9 +1303,10 @@ body {
 .sec-finding-header { display: flex; align-items: center; gap: 6px; }
 .sec-finding-label { color: var(--fg1); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .sec-tag {
-  font-size: 9px; padding: 1px 5px; border-radius: 3px;
-  background: var(--bg3, #2a2a3a); color: var(--fg1);
+  font-size: 9px; padding: 2px 6px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.7);
   font-family: monospace; white-space: nowrap; margin-left: auto; flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 .sec-finding-desc {
   font-size: 11px; color: var(--fg1); line-height: 1.4;
