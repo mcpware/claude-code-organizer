@@ -733,9 +733,9 @@ function renderPills() {
     ${visiblePills.map((pill) => {
       const isActive = pill.key === "all" ? allActive : activeFilters.has(pill.key);
       const dimmed = pill.noRule ? " f-pill-dim" : "";
-      const titleAttr = pill.tip ? ` title="${esc(pill.tip)}"` : "";
+      const tipAttr = pill.tip ? ` data-tooltip="${esc(pill.tip)}"` : "";
       return `
-        <button type="button" class="f-pill${isActive ? " active" : ""}${dimmed}" data-filter="${pill.key}"${titleAttr}>
+        <button type="button" class="f-pill${isActive ? " active" : ""}${dimmed}" data-filter="${pill.key}"${tipAttr}>
           <span class="f-pill-ico">${pill.icon}</span>
           ${esc(pill.label)}
           <b>${pill.count}</b>
@@ -1640,6 +1640,9 @@ function renderBadge(item, detail = false) {
 }
 
 function initSortable() {
+  // Drag-and-drop disabled — use Move button instead.
+  // Keeping the function stub so callers don't break.
+  return;
   if (!window.Sortable) return;
 
   const scrollEl = document.getElementById("mainContent");
@@ -1710,6 +1713,8 @@ function initSortable() {
 }
 
 function setupScopeDropZones() {
+  // Drag-and-drop disabled — use Move button instead.
+  return;
   document.addEventListener("dragover", (event) => {
     if (!draggingItem) return;
 

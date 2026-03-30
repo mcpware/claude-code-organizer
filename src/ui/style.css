@@ -369,6 +369,31 @@ body {
 .f-pill-dim:hover { opacity: 0.7; }
 .f-pill-more { font-style: italic; opacity: 0.6; border-style: dashed; }
 .f-pill-more:hover { opacity: 1; }
+.f-pill[data-tooltip] { position: relative; }
+.f-pill[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface-elevated, #1a1a2e);
+  color: var(--text-secondary, #ccc);
+  border: 1px solid var(--border-light, #333);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.65rem;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  width: max-content;
+  max-width: 280px;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.f-pill[data-tooltip]:hover::after { opacity: 1; }
 
 .select-btn {
   margin-left: auto;
@@ -484,6 +509,7 @@ body {
 }
 
 .item .drag-handle {
+  display: none; /* drag-and-drop disabled — use Move button */
   position: absolute;
   left: -20px;
   top: 50%;
