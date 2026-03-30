@@ -377,7 +377,7 @@ body {
   left: 50%;
   transform: translateX(-50%);
   background: var(--surface-elevated, #1a1a2e);
-  color: var(--text-secondary, #ccc);
+  color: var(--text-primary, #eee);
   border: 1px solid var(--border-light, #333);
   border-radius: 6px;
   padding: 6px 10px;
@@ -991,7 +991,7 @@ body {
   top: calc(100% + 6px);
   left: 0;
   background: var(--surface-elevated, #1a1a2e);
-  color: var(--text-secondary, #ccc);
+  color: var(--text-primary, #eee);
   border: 1px solid var(--border-light, #333);
   border-radius: 6px;
   padding: 6px 10px;
