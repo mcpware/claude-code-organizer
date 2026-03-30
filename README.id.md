@@ -59,7 +59,7 @@ Atau run langsung: `npx @mcpware/claude-code-organizer`
 
 | | **CCO** | Standalone scanners | Desktop apps | VS Code extensions |
 |---|:---:|:---:|:---:|:---:|
-| Hierarki scope (Global > Workspace > Project) | **Ya** | Nggak | Nggak | Sebagian |
+| Hierarki scope (Global > Project) | **Ya** | Nggak | Nggak | Sebagian |
 | Drag-and-drop antar scope | **Ya** | Nggak | Nggak | Nggak |
 | Security scan → klik finding → navigasi → hapus | **Ya** | Scan doang | Nggak | Nggak |
 | Context budget per item + inheritance | **Ya** | Nggak | Nggak | Nggak |
@@ -88,7 +88,6 @@ Claude Code diam-diam ngatur semuanya ke tiga level scope — tapi nggak pernah 
 
 ```
 Global                    ← ke-load di SEMUA session di mesin kamu
-  └─ Workspace            ← ke-load di semua project di bawah folder ini
        └─ Project         ← ke-load cuma pas kamu di direktori ini
 ```
 

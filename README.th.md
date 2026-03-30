@@ -59,7 +59,7 @@ Run npx @mcpware/claude-code-organizer and tell me the URL when it's ready.
 
 | | **CCO** | Standalone scanner | Desktop app | VS Code extension |
 |---|:---:|:---:|:---:|:---:|
-| Scope hierarchy (Global > Workspace > Project) | **Yes** | No | No | บางส่วน |
+| Scope hierarchy (Global > Project) | **Yes** | No | No | บางส่วน |
 | Drag-and-drop ย้ายข้าม scope | **Yes** | No | No | No |
 | Security scan → คลิก finding → ไปที่ server → ลบ | **Yes** | สแกนได้อย่างเดียว | No | No |
 | Context budget แยกรายการ + inheritance | **Yes** | No | No | No |
@@ -88,7 +88,6 @@ Claude Code แบ่งทุกอย่างเป็นสาม scope leve
 
 ```
 Global                    ← โหลดเข้าทุก session บนเครื่อง
-  └─ Workspace            ← โหลดเข้าทุก project ใต้โฟลเดอร์นี้
        └─ Project         ← โหลดเฉพาะตอนอยู่ใน directory นี้
 ```
 

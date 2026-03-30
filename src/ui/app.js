@@ -10,6 +10,7 @@ let data = null;
 let activeFilters = new Set();
 let selectedItem = null;
 let selectedScopeId = null;
+let showInherited = false;
 let pendingDrag = null;
 let pendingDelete = null;
 let draggingItem = null;
@@ -58,7 +59,6 @@ const ITEM_ICONS = {
 
 const SCOPE_ICONS = {
   global: "🌐",
-  workspace: "📂",
   project: "📂",
 };
 
@@ -109,6 +109,7 @@ async function init() {
     selectedScopeId = getInitialSelectedScopeId();
     initializeScopeState();
     setupUi();
+    setupScopeNotice();
     // Load cached scan results + check for new servers BEFORE first render
     await loadCachedSecurityResults();
     await checkForNewMcpServers();
@@ -144,6 +145,21 @@ async function checkForUpdate() {
 async function fetchJson(url) {
   const res = await fetch(url);
   return res.json();
+}
+
+function setupScopeNotice() {
+  const NOTICE_KEY = "cco-scope-notice-v1-dismissed";
+  if (localStorage.getItem(NOTICE_KEY)) return;
+  const tree = document.getElementById("sidebarTree");
+  if (!tree) return;
+  const notice = document.createElement("div");
+  notice.className = "scope-notice";
+  notice.innerHTML = `<span class="scope-notice-dismiss" id="scopeNoticeDismiss">✕</span><strong>How scopes work:</strong> Claude Code has two scopes — <strong>Global</strong> and <strong>Project</strong>. Every project inherits directly from Global only. Sibling or nested projects do not inherit from each other.`;
+  tree.parentElement.insertBefore(notice, tree);
+  document.getElementById("scopeNoticeDismiss").addEventListener("click", () => {
+    localStorage.setItem(NOTICE_KEY, "1");
+    notice.remove();
+  });
 }
 
 function setupUi() {
@@ -205,6 +221,7 @@ function setupSidebarTree() {
     const hdr = event.target.closest(".s-scope-hdr");
     if (!hdr) return;
     selectedScopeId = hdr.dataset.scopeId;
+    showInherited = false;
     expandScopePath(selectedScopeId);
     if (isContextBudgetOpen()) {
       openContextBudget(selectedScopeId);
@@ -605,10 +622,14 @@ function renderContentHeader() {
 
 function renderPills() {
   const container = document.getElementById("pills");
-  // Count items for the currently selected scope (not global counts)
-  const scopeItems = selectedScopeId
+  // Count items for the currently selected scope, plus Global if showInherited
+  let scopeItems = selectedScopeId
     ? (data?.items || []).filter((i) => i.scopeId === selectedScopeId)
     : data?.items || [];
+  if (showInherited && selectedScopeId && selectedScopeId !== "global") {
+    const globalItems = (data?.items || []).filter((i) => i.scopeId === "global");
+    scopeItems = [...scopeItems, ...globalItems];
+  }
   const scopeCounts = {};
   let scopeTotal = 0;
   for (const item of scopeItems) {
@@ -776,7 +797,9 @@ function renderItem(item) {
   const sizeLabel = item.size || "—";
   const desc = item.description || item.fileName || item.path || "No description";
 
-  const actions = item.locked ? "" : `
+  const isInherited = showInherited && item.scopeId === "global" && selectedScopeId !== "global";
+  const inheritedBadge = isInherited ? `<span class="item-badge ib-global">Global</span>` : "";
+  const actions = (item.locked || isInherited) ? "" : `
     <span class="item-actions">
       ${(canMoveItem(item) || item.locked) ? `<button type="button" class="act-btn act-move" data-action="move">Move</button>` : ""}
       <button type="button" class="act-btn act-open" data-action="open">Open</button>
@@ -806,7 +829,7 @@ function renderItem(item) {
       <span class="item-ico">${icon}</span>
       <span class="item-name">${esc(item.name)}</span>
       ${secBadgeHtml}${blFlagHtml}
-      ${badgeHtml}
+      ${inheritedBadge}${badgeHtml}
       <span class="item-desc">${item.category === "mcp" ? "" : esc(desc)}</span>
       ${item.category === "mcp" ? "" : `<div class="item-right">
         <span class="item-size">${esc(sizeLabel)}</span>
@@ -1019,6 +1042,14 @@ function setupContextBudget() {
   });
 
   document.getElementById("ctxBudgetClose").addEventListener("click", closeContextBudget);
+
+  document.getElementById("inheritToggleBtn")?.addEventListener("click", () => {
+    const scope = getScopeById(selectedScopeId);
+    if (!scope || scope.id === "global") return;
+    showInherited = !showInherited;
+    document.getElementById("inheritToggleBtn").classList.toggle("active", showInherited);
+    renderAll();
+  });
 }
 
 function openContextBudget(scopeId) {
@@ -2225,7 +2256,10 @@ function findVisibleScopeInTree(scope) {
 }
 
 function getVisibleItemsForScope(scopeId) {
-  return getItemsForScope(scopeId).filter((item) => itemVisibleInMain(item));
+  const ownItems = getItemsForScope(scopeId).filter((item) => itemVisibleInMain(item));
+  if (!showInherited || scopeId === "global") return ownItems;
+  const globalItems = getItemsForScope("global").filter((item) => itemMatchesFilters(item) && itemMatchesSearch(item));
+  return [...ownItems, ...globalItems];
 }
 
 function itemVisibleInMain(item) {

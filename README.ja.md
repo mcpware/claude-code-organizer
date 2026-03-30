@@ -59,7 +59,7 @@ Run npx @mcpware/claude-code-organizer and tell me the URL when it's ready.
 
 | | **CCO** | 単体スキャナー | デスクトップアプリ | VS Code 拡張 |
 |---|:---:|:---:|:---:|:---:|
-| scope 階層（Global > Workspace > Project） | **対応** | 非対応 | 非対応 | 一部 |
+| scope 階層（Global > Project） | **対応** | 非対応 | 非対応 | 一部 |
 | scope 間 drag-and-drop | **対応** | 非対応 | 非対応 | 非対応 |
 | セキュリティ検出 → クリック → 遷移 → 削除 | **対応** | scan のみ | 非対応 | 非対応 |
 | アイテム単位の context budget（継承あり） | **対応** | 非対応 | 非対応 | 非対応 |
@@ -88,7 +88,6 @@ Claude Code は全部を3段階の scope で管理してる。ただし、その
 
 ```
 Global                    ← マシン上の全セッションにロード
-  └─ Workspace            ← このフォルダ配下のプロジェクト全部にロード
        └─ Project         ← このディレクトリにいるときだけロード
 ```
 

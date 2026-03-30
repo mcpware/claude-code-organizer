@@ -42,10 +42,19 @@ tests/
 
 ## How It Works
 
-1. **Scanner** reads `~/.claude/` across three scopes (Global → Workspace → Project)
+1. **Scanner** reads `~/.claude/` across two scopes (Global and Project)
 2. **Server** exposes scan results via REST API
 3. **UI** renders a three-panel dashboard with drag-and-drop
 4. **Mover** handles file operations between scopes with full undo support
+
+### Scope Model
+
+Claude Code has two active scopes:
+
+- **Global** — `~/.claude/` — applies to every session on this machine
+- **Project** — `<repo>/.claude/` — applies only to that repository
+
+All project scopes inherit directly from Global. There is no intermediate scope between them — sibling projects do not inherit from each other, and nested directory structures do not create additional inheritance layers. The sidebar tree groups projects visually by path, but this is organisational only and does not affect what Claude Code loads.
 
 ## What to Work On
 

@@ -59,7 +59,7 @@ Hoặc chạy thẳng: `npx @mcpware/claude-code-organizer`
 
 | | **CCO** | Standalone scanners | Desktop apps | VS Code extensions |
 |---|:---:|:---:|:---:|:---:|
-| Scope hierarchy (Global > Workspace > Project) | **Có** | Không | Không | Một phần |
+| Scope hierarchy (Global > Project) | **Có** | Không | Không | Một phần |
 | Drag-and-drop giữa các scope | **Có** | Không | Không | Không |
 | Security scan → click finding → nhảy tới → xóa | **Có** | Chỉ scan | Không | Không |
 | Context budget từng item, có inheritance | **Có** | Không | Không | Không |
@@ -88,7 +88,6 @@ Claude Code tự phân loại mọi thứ vào 3 cấp scope — nhưng chẳng 
 
 ```
 Global                    ← load vào MỌI session trên máy
-  └─ Workspace            ← load vào tất cả project trong folder này
        └─ Project         ← chỉ load khi bạn đang ở thư mục này
 ```
 

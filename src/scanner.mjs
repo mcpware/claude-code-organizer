@@ -291,17 +291,12 @@ async function discoverScopes() {
       }
     }
 
-    // Determine type: if parent is global → workspace/project, if parent is another project → sub-project
-    const isWorkspace = parentId === "global" && projectEntries.some(
-      e => e !== entry && e.realPath.startsWith(entry.realPath + "/")
-    );
-
     scopes.push({
       id: entry.encodedName,
       name: entry.shortName,
-      type: isWorkspace ? "workspace" : "project",
-      tag: isWorkspace ? "workspace" : "project",
-      parentId,
+      type: "project",
+      tag: "project",
+      parentId: "global",
       claudeProjectDir: entry.claudeProjectDir,
       repoDir: entry.realPath,
     });

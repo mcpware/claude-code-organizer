@@ -281,6 +281,26 @@ body {
 .update-banner::after { content: "Click to copy update command — paste into Claude Code"; display: block; font-size: 0.55rem; opacity: 0; transition: opacity 150ms; margin-top: 2px; color: #d4c080; }
 .update-banner:hover::after { opacity: 1; }
 .update-banner code { background: oklch(0.20 0.04 80); padding: 1px 5px; border-radius: 3px; font-size: 0.6rem; }
+.scope-notice {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--accent);
+  padding: 7px 10px;
+  margin: 6px 8px;
+  border-radius: 4px;
+  line-height: 1.5;
+}
+.scope-notice strong { color: var(--text-primary); }
+.scope-notice-dismiss {
+  float: right;
+  cursor: pointer;
+  opacity: 0.5;
+  font-size: 0.7rem;
+  margin-left: 6px;
+}
+.scope-notice-dismiss:hover { opacity: 1; }
 .s-cat-ico { font-size: 0.78rem; }
 .s-cat-nm { font-weight: 400; flex: 1; }
 .s-cat-cnt { font-size: 0.65rem; }
@@ -923,8 +943,12 @@ body {
 
 /* ── Context Budget Panel ───────────────────────────────────── */
 
-.ctx-budget-btn { margin-left: auto; }
+.inherit-toggle-btn { margin-left: auto; }
+.inherit-toggle-btn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-light); }
+.inherit-toggle-btn.active { border-color: var(--accent); color: var(--accent-text); background: var(--accent-light); }
 .ctx-budget-btn:hover { border-color: var(--accent); color: var(--accent-text); background: var(--accent-light); }
+.ib-global { color: var(--badge-user); }
+.ib-global::before { background: var(--badge-user); }
 
 .ctx-budget-summary { padding: 16px 20px; border-bottom: 1px solid var(--border-light); }
 .ctx-budget-bar-wrap {

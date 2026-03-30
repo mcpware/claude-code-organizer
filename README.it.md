@@ -59,7 +59,7 @@ Oppure lancialo direttamente: `npx @mcpware/claude-code-organizer`
 
 | | **CCO** | Scanner standalone | App desktop | Estensioni VS Code |
 |---|:---:|:---:|:---:|:---:|
-| Gerarchia scope (Global > Workspace > Project) | **Sì** | No | No | Parziale |
+| Gerarchia scope (Global > Project) | **Sì** | No | No | Parziale |
 | Drag-and-drop tra scope | **Sì** | No | No | No |
 | Security scan → click sul finding → naviga → cancella | **Sì** | Solo scan | No | No |
 | Context budget per elemento con ereditarietà | **Sì** | No | No | No |
@@ -88,7 +88,6 @@ Claude Code organizza tutto in tre livelli di scope — ma non te lo dice:
 
 ```
 Global                    ← caricato in OGNI sessione sulla tua macchina
-  └─ Workspace            ← caricato in tutti i progetti sotto questa cartella
        └─ Project         ← caricato solo quando sei in questa directory
 ```
 

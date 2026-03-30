@@ -59,7 +59,7 @@ Ya da direkt çalıştır: `npx @mcpware/claude-code-organizer`
 
 | | **CCO** | Bağımsız scanner'lar | Desktop app'ler | VS Code extension'ları |
 |---|:---:|:---:|:---:|:---:|
-| Scope hiyerarşisi (Global > Workspace > Project) | **Evet** | Yok | Yok | Kısmen |
+| Scope hiyerarşisi (Global > Project) | **Evet** | Yok | Yok | Kısmen |
 | Scope'lar arası drag-and-drop | **Evet** | Yok | Yok | Yok |
 | Güvenlik taraması → tıkla → git → sil | **Evet** | Sadece tarama | Yok | Yok |
 | Öğe bazlı context budget + inheritance | **Evet** | Yok | Yok | Yok |
@@ -88,7 +88,6 @@ Claude Code her şeyi üç scope seviyesine dağıtıyor ama sana söylemiyor:
 
 ```
 Global                    ← makinedeki HER oturuma yüklenir
-  └─ Workspace            ← bu klasörün altındaki tüm projelere yüklenir
        └─ Project         ← sadece bu dizindeyken yüklenir
 ```
 

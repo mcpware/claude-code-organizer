@@ -15,6 +15,18 @@ import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 
+const CLAUDE_DIR = join(homedir(), ".claude");
+
+/**
+ * Returns true if a scope's .claude directory is the same as the global ~/.claude.
+ * This happens when repoDir === HOME (e.g. /home/user).
+ * Skills/memories moved there would land in ~/.claude/ — same as Global — which is confusing.
+ * Such scopes should not be offered as destinations for file-based items.
+ */
+function sharesGlobalClaudeDir(scope) {
+  return Boolean(scope.repoDir && join(scope.repoDir, ".claude") === CLAUDE_DIR);
+}
+
 /**
  * Move a file or directory, falling back to copy+delete on EXDEV (cross-device).
  */
@@ -433,20 +445,17 @@ export function getValidDestinations(item, scopes) {
     .filter(s => {
       switch (item.category) {
         case "memory":
-          return true; // memories can go to any scope
         case "skill":
-          // skills can go to global or any scope with a repoDir
-          return s.id === "global" || s.repoDir;
-        case "mcp":
-          return true; // mcp can go to any scope
-        case "plan":
-          return true; // plans can go to any scope
         case "command":
-          return s.id === "global" || s.repoDir;
         case "agent":
-          return s.id === "global" || s.repoDir;
         case "rule":
-          return s.id === "global" || s.repoDir;
+          // File-based items: global is always valid; project scopes are valid only if
+          // their .claude dir is distinct from global's ~/.claude (avoids silent overlap).
+          return s.id === "global" || (s.repoDir && !sharesGlobalClaudeDir(s));
+        case "mcp":
+          return true; // MCP configs live in claudeProjectDir, not repoDir/.claude/
+        case "plan":
+          return true;
         default:
           return false;
       }

@@ -61,7 +61,7 @@ Or run directly: `npx @mcpware/claude-code-organizer`
 
 | | **CCO** | Standalone scanners | Desktop apps | VS Code extensions |
 |---|:---:|:---:|:---:|:---:|
-| Scope hierarchy (Global > Workspace > Project) | **Yes** | No | No | Partial |
+| Scope hierarchy (Global > Project) | **Yes** | No | No | Partial |
 | Drag-and-drop between scopes | **Yes** | No | No | No |
 | Security scan → click finding → navigate → delete | **Yes** | Scan only | No | No |
 | Per-item context budget with inheritance | **Yes** | No | No | No |
@@ -86,13 +86,14 @@ Your context window is not 200K tokens. It's 200K minus everything Claude pre-lo
 
 ## Keep Your Scopes Clean
 
-Claude Code silently organizes everything into three scope levels — but never tells you:
+Claude Code organizes everything into two scope levels:
 
 ```
 Global                    ← loads into EVERY session on your machine
-  └─ Workspace            ← loads into all projects under this folder
-       └─ Project         ← loads only when you're in this directory
+  └─ Project              ← loads only when you're in this directory
 ```
+
+Projects inherit from Global only. Sibling projects do not inherit from each other, and nested directory structures do not create extra inheritance layers — the sidebar groups them visually, but every project's parent is Global.
 
 Here's the problem: **Claude creates memories and skills in whatever directory you're currently in.** You tell Claude "always use ESM imports" while working in `~/myapp` — that memory is trapped in that project scope. Open a different project, Claude doesn't know it. You tell it again. Now you have the same memory in two places, both eating context tokens.
 

@@ -372,9 +372,9 @@ test.describe('API Layer', () => {
     expect(nested).toBeTruthy();
     expect(deep).toBeTruthy();
 
-    // Hierarchy chain: deep → nested → project → global
-    expect(deep.parentId).toBe(env.encodedNested);
-    expect(nested.parentId).toBe(env.encodedProject);
+    // All project scopes inherit directly from global (flat model)
+    expect(deep.parentId).toBe('global');
+    expect(nested.parentId).toBe('global');
     expect(project.parentId).toBe('global');
     expect(global.parentId).toBeNull();
   });
@@ -1081,16 +1081,11 @@ test.describe('UI Rendering', () => {
     await expect(current).toBeVisible();
     await expect(current).toContainText('Global');
 
-    // Hierarchy order: Global before workspace before sub-app before core
+    // All project scopes are flat — just verify they all appear in the list
     const allTexts = await destinations.allTextContents();
-    const globalIdx = allTexts.findIndex(t => t.includes('Global'));
-    const workspaceIdx = allTexts.findIndex(t => t.includes('workspace'));
-    const subAppIdx = allTexts.findIndex(t => t.includes('sub-app'));
-    const coreIdx = allTexts.findIndex(t => t.includes('core'));
-
-    expect(globalIdx).toBeLessThan(workspaceIdx);
-    expect(workspaceIdx).toBeLessThan(subAppIdx);
-    expect(subAppIdx).toBeLessThan(coreIdx);
+    expect(allTexts.some(t => t.includes('workspace'))).toBe(true);
+    expect(allTexts.some(t => t.includes('sub-app'))).toBe(true);
+    expect(allTexts.some(t => t.includes('core'))).toBe(true);
 
     await page.click('#moveCancel');
   });
@@ -1587,12 +1582,12 @@ test.describe('Rescan verification — scanner sees moved items', () => {
     expect(item).toBeTruthy();
     expect(item.subType).toBe('feedback');
 
-    // Verify the scope chain is intact: deep → nested → project → global
+    // All scopes inherit directly from global (flat model)
     const deepScope = after.scopes.find(s => s.id === env.encodedDeep);
     const nestedScope = after.scopes.find(s => s.id === env.encodedNested);
     const projectScope = after.scopes.find(s => s.id === env.encodedProject);
-    expect(deepScope.parentId).toBe(env.encodedNested);
-    expect(nestedScope.parentId).toBe(env.encodedProject);
+    expect(deepScope.parentId).toBe('global');
+    expect(nestedScope.parentId).toBe('global');
     expect(projectScope.parentId).toBe('global');
   });
 
