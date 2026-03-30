@@ -50,7 +50,7 @@ if (!isMcpMode) {
         '---',
         '',
         'Run `npx @mcpware/claude-code-organizer` to open the config management dashboard at localhost:3847.',
-        'The dashboard shows your full scope hierarchy (Global > Workspace > Project) with drag-and-drop between scopes.',
+        'The dashboard shows your Global and Project scopes with drag-and-drop between them.',
         ''
       ].join('\n'));
       console.log('  ✓ Installed /cco skill globally — next time just type /cco in Claude Code!\n');

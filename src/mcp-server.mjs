@@ -42,7 +42,7 @@ function findItem(category, name, scopeId) {
 
 server.tool(
   'scan_inventory',
-  'Scan all Claude Code configurations across every scope (global, workspace, project). Returns memories, skills, MCP servers, hooks, configs, plugins, and plans with their file paths and metadata.',
+  'Scan all Claude Code configurations across Global and Project scopes. Returns memories, skills, MCP servers, hooks, configs, plugins, and plans with their file paths and metadata.',
   {},
   async () => {
     const data = await freshScan();
