@@ -15,18 +15,6 @@ import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
 
-const CLAUDE_DIR = join(homedir(), ".claude");
-
-/**
- * Returns true if a scope's .claude directory is the same as the global ~/.claude.
- * This happens when repoDir === HOME (e.g. /home/user).
- * Skills/memories moved there would land in ~/.claude/ — same as Global — which is confusing.
- * Such scopes should not be offered as destinations for file-based items.
- */
-function sharesGlobalClaudeDir(scope) {
-  return Boolean(scope.repoDir && join(scope.repoDir, ".claude") === CLAUDE_DIR);
-}
-
 /**
  * Move a file or directory, falling back to copy+delete on EXDEV (cross-device).
  */
@@ -46,6 +34,15 @@ async function safeRename(src, dest, isDir = false) {
 
 const HOME = homedir();
 const CLAUDE_DIR = join(HOME, ".claude");
+
+/**
+ * Returns true if a scope's .claude directory is the same as the global ~/.claude.
+ * This happens when repoDir === HOME (e.g. /home/user).
+ * Skills/memories moved there would land in ~/.claude/ — same as Global — which is confusing.
+ */
+function sharesGlobalClaudeDir(scope) {
+  return Boolean(scope.repoDir && join(scope.repoDir, ".claude") === CLAUDE_DIR);
+}
 
 // ── Resolve scope to real filesystem path ────────────────────────────
 
