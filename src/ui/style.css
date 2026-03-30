@@ -525,7 +525,7 @@ body {
 .item:hover .drag-handle { opacity: 1; }
 .item.locked .drag-handle { display: none; }
 
-.item:hover { border-color: var(--border); box-shadow: 0 2px 6px oklch(0.20 0.01 70 / 0.08); }
+.item:hover { border-color: var(--border); box-shadow: 0 2px 6px oklch(0.20 0.01 70 / 0.08); z-index: 10; }
 .item.selected { background: oklch(0.97 0.015 160); border-color: oklch(0.90 0.03 160); }
 .item.locked { opacity: 0.45; cursor: default; }
 .item.sortable-ghost { opacity: 0.25; border: 1px dashed var(--accent); background: var(--accent-light); }
