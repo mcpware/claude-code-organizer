@@ -984,6 +984,34 @@ body {
 .st-ancestor { color: oklch(0.58 0.14 160); border-color: oklch(0.58 0.14 160); }
 .st-shadowed { color: var(--text-muted); border-color: var(--text-muted); opacity: 0.6; text-decoration: line-through; }
 .st-conflict { color: oklch(0.65 0.15 55); border-color: oklch(0.65 0.15 55); }
+.scope-tag[data-tooltip] { position: relative; cursor: help; }
+.scope-tag[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  background: var(--surface-elevated, #1a1a2e);
+  color: var(--text-secondary, #ccc);
+  border: 1px solid var(--border-light, #333);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.65rem;
+  font-weight: 400;
+  font-style: normal;
+  text-transform: none;
+  letter-spacing: normal;
+  text-decoration: none;
+  line-height: 1.5;
+  white-space: normal;
+  width: max-content;
+  max-width: 260px;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.scope-tag[data-tooltip]:hover::after { opacity: 1; }
 .s-tree-toggle { cursor: pointer; font-size: 0.7rem; opacity: 0.5; margin-left: auto; padding: 0 4px; }
 .s-tree-toggle:hover { opacity: 1; }
 .s-tree-toggle.active { opacity: 1; }

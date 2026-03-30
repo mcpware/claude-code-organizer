@@ -914,10 +914,10 @@ function renderItem(item) {
   const isFromAncestor = showEffective && effectiveAncestorKeys.has(key);
   const isShadowed     = isFromGlobal && effectiveShadowedKeys.has(key);
   const isConflict     = showEffective && effectiveConflictKeys.has(key);
-  const effectiveBadge = isShadowed     ? `<span class="scope-tag st-shadowed">Shadowed</span>`
-                       : isConflict     ? `<span class="scope-tag st-conflict">⚠ Conflict</span>`
-                       : isFromAncestor ? `<span class="scope-tag st-ancestor">Ancestor</span>`
-                       : isFromGlobal   ? `<span class="scope-tag st-global">Global</span>`
+  const effectiveBadge = isShadowed     ? `<span class="scope-tag st-shadowed" data-tooltip="This item is overridden by a project-scoped item with the same name">Shadowed</span>`
+                       : isConflict     ? `<span class="scope-tag st-conflict" data-tooltip="Same name exists in both user and project scope — Claude Code does not guarantee which one applies">⚠ Conflict</span>`
+                       : isFromAncestor ? `<span class="scope-tag st-ancestor" data-tooltip="From a parent directory — Claude Code loads CLAUDE.md files by walking up from the working directory">Ancestor</span>`
+                       : isFromGlobal   ? `<span class="scope-tag st-global" data-tooltip="Available globally from ~/.claude/ — applies to all projects on this machine">Global</span>`
                        : "";
   const actions = (item.locked || isFromGlobal) ? "" : `
     <span class="item-actions">
