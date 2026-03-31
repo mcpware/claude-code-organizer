@@ -948,11 +948,11 @@ function renderItem(item) {
       ${secBadgeHtml}${blFlagHtml}
       ${badgeHtml}
       <span class="item-desc">${item.category === "mcp" ? "" : esc(desc)}</span>
+      ${actions}
       ${item.category === "mcp" ? "" : `<div class="item-right">
         <span class="item-size">${esc(sizeLabel)}</span>
         <span class="item-date">${esc(dateLabel)}</span>
       </div>`}
-      ${actions}
     </div>`;
 }
 
