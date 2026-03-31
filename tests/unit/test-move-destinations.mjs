@@ -120,4 +120,18 @@ describe('getValidDestinations — locked items', () => {
     const item = { ...makeItem('skill', '-proj-a'), locked: true };
     assert.deepStrictEqual(destIds(item), []);
   });
+
+  it('every non-movable category returns empty even when unlocked', () => {
+    for (const cat of ['plan', 'rule', 'config', 'hook', 'plugin', 'session']) {
+      const item = makeItem(cat, '-proj-a');
+      assert.deepStrictEqual(destIds(item), [], `${cat} should have no destinations`);
+    }
+  });
+
+  it('every movable category returns non-empty when unlocked', () => {
+    for (const cat of ['skill', 'memory', 'command', 'agent', 'mcp']) {
+      const item = makeItem(cat, '-proj-a');
+      assert.ok(destIds(item).length > 0, `${cat} should have destinations`);
+    }
+  });
 });
