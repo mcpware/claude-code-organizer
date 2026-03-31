@@ -40,7 +40,7 @@ const CLAUDE_DIR = join(HOME, ".claude");
  * This happens when repoDir === HOME (e.g. /home/user).
  * Skills/memories moved there would land in ~/.claude/ — same as Global — which is confusing.
  */
-function sharesGlobalClaudeDir(scope) {
+export function sharesGlobalClaudeDir(scope) {
   return Boolean(scope.repoDir && join(scope.repoDir, ".claude") === CLAUDE_DIR);
 }
 
