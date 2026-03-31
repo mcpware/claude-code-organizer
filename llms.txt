@@ -1,9 +1,10 @@
 # Claude Code Organizer
 
-> Organize all your Claude Code memories, skills, MCP servers, commands, agents, rules, and hooks — view by scope hierarchy, move between scopes via drag-and-drop.
+> Organize Claude Code memories, skills, MCP servers, commands, agents, rules, hooks, plans, sessions, and config across scopes.
 
 ## Docs
 
+- [AI Index](https://github.com/mcpware/claude-code-organizer/blob/main/AI_INDEX.md): Canonical AI-oriented map of architecture, behavior, tests, drift, and file responsibilities
 - [README](https://github.com/mcpware/claude-code-organizer/blob/main/README.md): Full documentation, features, comparison, quick start
 - [npm package](https://www.npmjs.com/package/@mcpware/claude-code-organizer): Install via npx
 - [MCP Server Mode](https://github.com/mcpware/claude-code-organizer/blob/main/README.md#api): 4 tools — scan_inventory, move_item, delete_item, list_destinations
@@ -19,8 +20,8 @@ npx @mcpware/claude-code-organizer
 
 - Scans ~/.claude/ directory across all scopes (Global > Workspace > Project)
 - 11 categories: memories, skills, MCP servers, commands, agents, rules, configs, hooks, plugins, plans, sessions
-- Drag-and-drop items between scopes
-- Undo every action
+- Move supported items between scopes from the dashboard
+- Best-effort restore after mutations
 - Bulk operations
 - Search and filter
 - MCP server mode for AI clients
