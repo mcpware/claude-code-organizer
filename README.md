@@ -86,13 +86,6 @@ Your context window is not 200K tokens. It's 200K minus everything Claude pre-lo
 
 ## Keep Your Scopes Clean
 
-CCO shows what loads globally vs what stays project-specific:
-
-```
-Global                    ← loads into EVERY session on your machine
-  └─ Project              ← loads only when you're in this directory
-```
-
 Different categories follow different official rules — there is no single universal inheritance model:
 
 - **MCP servers**: resolved by `local > project > user` precedence. Same-name servers use the narrower scope.
