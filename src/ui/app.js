@@ -161,8 +161,8 @@ async function checkForUpdate() {
   } catch { /* silent */ }
 }
 
-async function fetchJson(url) {
-  const res = await fetch(url);
+async function fetchJson(url, options) {
+  const res = await fetch(url, options);
   return res.json();
 }
 
@@ -2861,7 +2861,10 @@ function showMcpDisableConfirm(scope, mcpName) {
 
   overlay.querySelector(".mcp-confirm-cancel").addEventListener("click", () => overlay.remove());
   overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector(".mcp-confirm-ok").addEventListener("click", () => {
+  const okBtn = overlay.querySelector(".mcp-confirm-ok");
+  if (!okBtn) { console.error("[CCO] mcp-confirm-ok button not found in overlay!"); return; }
+  okBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
     overlay.remove();
     if (!scope.repoDir) { toast("No project path — select a project scope", true); return; }
     toggleMcpDisabled(scope.repoDir, mcpName, "disable");

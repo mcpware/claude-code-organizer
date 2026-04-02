@@ -3317,27 +3317,26 @@ test.describe('ccsrc Security Features', () => {
     }
   });
 
-  test('MCP Policy button visible in MCP category header', async ({ page }) => {
+  test('MCP Controls button visible in top bar', async ({ page }) => {
     await page.goto(env.baseURL);
     await page.waitForSelector('#loading', { state: 'hidden' });
     await page.locator(`.s-scope-hdr[data-scope-id="${env.encodedProject}"] .s-nm`).click();
     await page.waitForTimeout(500);
-    const policyBtn = page.locator('.mcp-policy-btn');
-    await expect(policyBtn).toBeVisible();
-    await expect(policyBtn).toContainText('Policy');
+    const btn = page.locator('#mcpControlsBtn');
+    await expect(btn).toBeVisible();
+    await expect(btn).toContainText('MCP Controls');
   });
 
-  test('clicking Policy button opens modal', async ({ page }) => {
+  test('clicking MCP Controls opens panel with search input', async ({ page }) => {
     await page.goto(env.baseURL);
     await page.waitForSelector('#loading', { state: 'hidden' });
     await page.locator(`.s-scope-hdr[data-scope-id="${env.encodedProject}"] .s-nm`).click();
     await page.waitForTimeout(500);
-    await page.locator('.mcp-policy-btn').click();
+    await page.locator('#mcpControlsBtn').click();
     await page.waitForTimeout(500);
-    const modal = page.locator('.policy-modal');
-    await expect(modal).toBeVisible();
-    // Modal should have allowlist and denylist sections
-    await expect(modal.locator('h4').first()).toContainText('Denylist');
+    const panel = page.locator('#mcpControlsPanel');
+    await expect(panel).toBeVisible();
+    await expect(panel.locator('#mcpDisableInput')).toBeVisible();
   });
 
   // ── Project Server Approval State (#5) ──
@@ -3357,15 +3356,137 @@ test.describe('ccsrc Security Features', () => {
     }
   });
 
-  test('approval badges visible on project MCP servers in UI', async ({ page }) => {
+  test('MCP items have Disable button visible on hover', async ({ page }) => {
     await page.goto(env.baseURL);
     await page.waitForSelector('#loading', { state: 'hidden' });
     await page.locator(`.s-scope-hdr[data-scope-id="${env.encodedProject}"] .s-nm`).click();
-    await page.waitForTimeout(500);
-    // Check for approval badges on MCP items
-    const approvalBadges = page.locator('.approval-badge');
-    const count = await approvalBadges.count();
+    await page.waitForTimeout(1000);
+    const mcpItem = page.locator('.item[data-category="mcp"]').first();
+    if (await mcpItem.count() > 0) {
+      await mcpItem.hover();
+      const disableBtn = mcpItem.locator('[data-action="mcp-toggle"]');
+      await expect(disableBtn).toBeVisible();
+      await expect(disableBtn).toContainText('Disable');
+    }
+  });
+
+  // ── MCP Disable/Enable full QA (#4 redesign) ──
+
+  test('disable MCP via inline button: confirm dialog, dim items, Show Effective survives, re-enable', async ({ page }) => {
+    // Use test-server which exists in project .mcp.json
+    const serverName = 'test-server';
+
+    // Step 1: Navigate to project scope
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+    await page.locator(`.s-scope-hdr[data-scope-id="${env.encodedProject}"] .s-nm`).click();
+    await page.waitForTimeout(1000);
+
+    // Step 2: Hover MCP item to reveal Disable button
+    const mcpItem = page.locator(`.item[data-category="mcp"]`).filter({ has: page.locator(`.item-name:text-is("${serverName}")`) });
+    await expect(mcpItem.first()).toBeVisible();
+    await mcpItem.first().hover();
+    const disableBtn = mcpItem.first().locator('[data-action="mcp-toggle"]');
+    await expect(disableBtn).toContainText('Disable');
+
+    // Step 3: Click Disable — confirmation dialog should appear
+    await disableBtn.click();
+    const confirmOverlay = page.locator('.mcp-confirm-overlay');
+    await expect(confirmOverlay).toBeVisible();
+    await expect(confirmOverlay.locator('h3')).toContainText(serverName);
+
+    // Step 4: Click Confirm Disable
+    await confirmOverlay.locator('.mcp-confirm-ok').click();
+    await page.waitForTimeout(2000);
+
+    // Step 5: Verify item is dimmed with Disabled badge
+    const disabledItem = page.locator(`.item.mcp-disabled`).filter({ has: page.locator(`.item-name:text-is("${serverName}")`) });
+    await expect(disabledItem.first()).toBeVisible({ timeout: 5000 });
+    const badge = disabledItem.first().locator('.mcp-disabled-badge');
+    await expect(badge).toBeVisible();
+
+    // Step 6: Verify API persisted the disabled state
+    const apiRes = await (await fetch(`${env.baseURL}/api/mcp-disabled?project=${encodeURIComponent(env.projectDir)}`)).json();
+    expect(apiRes.disabled).toContain(serverName);
+
+    // Step 7: Toggle Show Effective — disabled state should survive
+    await page.locator('#inheritToggleBtn').click();
+    await page.waitForTimeout(1000);
+    const stillDisabled = page.locator(`.item.mcp-disabled`).filter({ has: page.locator(`.item-name:text-is("${serverName}")`) });
+    expect(await stillDisabled.count()).toBeGreaterThan(0);
+
+    // Step 8: Re-enable via hover → Enable button
+    await stillDisabled.first().hover();
+    const enableBtn = stillDisabled.first().locator('[data-action="mcp-toggle"]');
+    await expect(enableBtn).toContainText('Enable');
+    await enableBtn.click();
+    await page.waitForTimeout(1000);
+
+    // Step 9: Verify item is no longer dimmed
+    const reEnabled = page.locator(`.item.mcp-disabled`).filter({ has: page.locator(`.item-name:text-is("${serverName}")`) });
+    expect(await reEnabled.count()).toBe(0);
+
+    // Step 10: Verify API cleared
+    const apiRes2 = await (await fetch(`${env.baseURL}/api/mcp-disabled?project=${encodeURIComponent(env.projectDir)}`)).json();
+    expect(apiRes2.disabled).not.toContain(serverName);
+  });
+
+  test('MCP Controls panel shows disabled server and can re-enable', async ({ page }) => {
+    const serverName = 'project-mcp';
+
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+    await page.locator(`.s-scope-hdr[data-scope-id="${env.encodedProject}"] .s-nm`).click();
+    await page.waitForTimeout(1000);
+
+    // Disable via API first
+    await fetch(`${env.baseURL}/api/mcp-disabled`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project: env.projectDir, action: 'disable', serverName }),
+    });
+
+    // Open MCP Controls panel
+    await page.locator('#mcpControlsBtn').click();
+    await page.waitForTimeout(1000);
+
+    const panel = page.locator('#mcpControlsPanel');
+    await expect(panel).toBeVisible();
+    // Should show the disabled server name
+    await expect(panel.locator('.mcp-controls-name')).toContainText(serverName);
+    // Should have remove button
+    const removeBtn = panel.locator(`.mcp-controls-remove-btn[data-name="${serverName}"]`);
+    await expect(removeBtn).toBeVisible();
+
+    // Click remove to re-enable
+    await removeBtn.click();
+    await page.waitForTimeout(1000);
+
+    // Verify API cleared
+    const apiRes = await (await fetch(`${env.baseURL}/api/mcp-disabled?project=${encodeURIComponent(env.projectDir)}`)).json();
+    expect(apiRes.disabled).not.toContain(serverName);
+  });
+
+  test('MCP Controls panel search filters available servers', async ({ page }) => {
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+    await page.locator(`.s-scope-hdr[data-scope-id="${env.encodedProject}"] .s-nm`).click();
+    await page.waitForTimeout(1000);
+    await page.locator('#mcpControlsBtn').click();
+    await page.waitForTimeout(1000);
+
+    // Type in search
+    const input = page.locator('#mcpDisableInput');
+    await input.fill('test');
+    await page.waitForTimeout(300);
+
+    // Should show suggestions containing 'test'
+    const suggestions = page.locator('.mcp-sug-item[data-name]');
+    const count = await suggestions.count();
     expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      const name = await suggestions.nth(i).getAttribute('data-name');
+      expect(name.toLowerCase()).toContain('test');
+    }
   });
 
   // ── Enterprise MCP Detection (#6) ──
