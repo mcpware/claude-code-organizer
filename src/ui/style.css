@@ -1451,6 +1451,13 @@ body {
 .sec-dup-sig { font-size: 0.6rem; color: var(--text-faint); background: var(--surface-inset); padding: 1px 5px; border-radius: 3px; }
 
 /* ── MCP Controls Panel ────────────────────────────────────────────── */
+.mcp-confirm-overlay {
+  position: fixed; inset: 0; z-index: 130;
+  background: oklch(0.20 0.01 70 / 0.36);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
 /* MCP disabled item styling */
 .item.mcp-disabled { opacity: 0.45; }
 .item.mcp-disabled .item-name { text-decoration: line-through; }

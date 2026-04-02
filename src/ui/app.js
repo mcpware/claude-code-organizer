@@ -2832,8 +2832,11 @@ function showMcpDisableConfirm(scope, mcpName) {
   const allMcp = (data?.items || []).filter(i => i.category === "mcp" && i.name === mcpName);
   const scopes = [...new Set(allMcp.map(i => i.scopeId === "global" ? "Global" : getScopeById(i.scopeId)?.name || i.scopeId))];
 
+  // Remove any existing mcp confirm overlay
+  document.querySelector(".mcp-confirm-overlay")?.remove();
+
   const overlay = document.createElement("div");
-  overlay.className = "modal-bg";
+  overlay.className = "mcp-confirm-overlay";
   overlay.innerHTML = `
     <div class="modal">
       <h3>Disable "${esc(mcpName)}"?</h3>
@@ -2841,17 +2844,18 @@ function showMcpDisableConfirm(scope, mcpName) {
       ${scopes.length > 1 ? `<p class="modal-sub">This name appears in: <strong>${scopes.map(s => esc(s)).join(", ")}</strong> — all will be affected.</p>` : ""}
       <p class="modal-sub" style="color:var(--text-faint)">Same as running <code>/mcp disable ${esc(mcpName)}</code> in Claude Code.</p>
       <div class="modal-btns">
-        <button class="d-btn" id="mcpConfirmCancel">Cancel</button>
-        <button class="d-btn d-btn-del" id="mcpConfirmOk">Disable</button>
+        <button class="d-btn mcp-confirm-cancel">Cancel</button>
+        <button class="d-btn d-btn-del mcp-confirm-ok">Disable</button>
       </div>
     </div>`;
 
   document.body.appendChild(overlay);
 
-  overlay.querySelector("#mcpConfirmCancel").addEventListener("click", () => overlay.remove());
+  overlay.querySelector(".mcp-confirm-cancel").addEventListener("click", () => overlay.remove());
   overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector("#mcpConfirmOk").addEventListener("click", () => {
+  overlay.querySelector(".mcp-confirm-ok").addEventListener("click", () => {
     overlay.remove();
+    if (!scope.repoDir) { toast("No project path — select a project scope", true); return; }
     toggleMcpDisabled(scope.repoDir, mcpName, "disable");
   });
 }
