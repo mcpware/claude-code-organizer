@@ -525,6 +525,27 @@ test.describe('API Layer', () => {
     await expect(sessionPill).toContainText('3');
   });
 
+  test('session category header has New button that copies command to clipboard', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(env.baseURL);
+    await page.waitForSelector('#loading', { state: 'hidden' });
+    await page.locator(`.s-scope-hdr[data-scope-id="${env.encodedProject}"] .s-nm`).click();
+    await page.waitForTimeout(500);
+    // The ＋ New button should appear in the session category header
+    const newBtn = page.locator('.new-session-btn');
+    await expect(newBtn).toBeVisible();
+    await expect(newBtn).toHaveText('＋ New');
+    await expect(newBtn).toHaveAttribute('title', 'Copy command to start a new session');
+    // Click it and verify clipboard contains the cd + claude command
+    await newBtn.click();
+    const clipText = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipText).toMatch(/^cd .+ && claude$/);
+    // Verify toast appeared
+    const toast = page.locator('#toast');
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText('Copied');
+  });
+
   test('session has delete and open buttons but no move button in UI', async ({ page }) => {
     await page.goto(env.baseURL);
     await page.waitForSelector('#loading', { state: 'hidden' });
