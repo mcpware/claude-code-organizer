@@ -195,6 +195,7 @@ function setupUi() {
   setupContextBudget();
   setupResizers();
   setupSecurityScan();
+  setupPolicyPanel();
 }
 
 function setupSearch() {
@@ -322,12 +323,6 @@ function setupItemList() {
       return;
     }
 
-    const policyBtn = event.target.closest(".mcp-policy-btn");
-    if (policyBtn) {
-      openMcpPolicyPanel();
-      return;
-    }
-
     const newSessionBtn = event.target.closest(".new-session-btn");
     if (newSessionBtn) {
       const scope = getScopeById(newSessionBtn.dataset.scopeId);
@@ -356,7 +351,7 @@ function setupItemList() {
     }
 
     const catHdr = event.target.closest(".cat-hdr");
-    if (catHdr && !event.target.closest(".sort-btn") && !event.target.closest(".new-session-btn") && !event.target.closest(".mcp-policy-btn")) {
+    if (catHdr && !event.target.closest(".sort-btn") && !event.target.closest(".new-session-btn")) {
       const key = `${selectedScopeId}::${catHdr.dataset.cat}`;
       if (uiState.collapsedCats.has(key)) uiState.collapsedCats.delete(key);
       else uiState.collapsedCats.add(key);
@@ -860,7 +855,6 @@ function renderMainContent() {
           <span class="cat-hdr-nm">${esc(config.label)}</span>
           <span class="cat-hdr-cnt">${pluralize(catItems.length, "item")}</span>
           ${category === "session" ? `<button type="button" class="new-session-btn" data-scope-id="${esc(scope.id)}" title="Copy command to start a new session">＋ New</button>` : ""}
-          ${category === "mcp" ? `<button type="button" class="mcp-policy-btn" title="Manage MCP allowlist/denylist policy">🛡 Policy</button>` : ""}
           ${category === "mcp" ? "" : `<span class="cat-hdr-sort">
             <button type="button" class="sort-btn${(uiState.sortBy[`${scope.id}::${category}`]?.field === "size") ? " active" : ""}" data-cat="${esc(category)}" data-sort="size">Size ${sortArrow(`${scope.id}::${category}`, "size")}</button>
             <button type="button" class="sort-btn${(uiState.sortBy[`${scope.id}::${category}`]?.field === "date") ? " active" : ""}" data-cat="${esc(category)}" data-sort="date">Date ${sortArrow(`${scope.id}::${category}`, "date")}</button>
@@ -987,8 +981,7 @@ function renderItem(item) {
       <span class="item-ico">${icon}</span>
       ${effectiveBadge}
       <span class="item-name">${esc(item.name)}</span>
-      ${secBadgeHtml}${blFlagHtml}${item.approvalState ? `<span class="approval-badge approval-${item.approvalState}">${item.approvalState === "approved" ? "✓ Approved" : item.approvalState === "rejected" ? "✗ Rejected" : "○ Pending"}</span>` : ""}
-      ${badgeHtml}
+      ${secBadgeHtml}${blFlagHtml}      ${badgeHtml}
       <span class="item-desc">${item.category === "mcp" ? "" : esc(desc)}</span>
       ${actions}
       ${item.category === "mcp" ? "" : item.category === "setting" ? `<div class="item-right">
@@ -2787,69 +2780,96 @@ function renderMarkdown(text) {
 // ── MCP Policy Panel ──────────────────────────────────────────────
 
 async function openMcpPolicyPanel() {
-  const res = await fetchJson("/api/mcp-policy");
-  if (!res.ok) { toast("Failed to load MCP policy", true); return; }
+  const panel = document.getElementById("policyPanel");
+  panel.classList.remove("hidden");
 
-  const overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  overlay.innerHTML = `
-    <div class="policy-modal">
-      <div class="policy-modal-hdr">
-        <h3>🛡 MCP Server Policy</h3>
-        <button class="policy-close-btn">✕</button>
-      </div>
-      <div class="policy-modal-body">
-        <div class="policy-section">
-          <h4>Denylist <span class="policy-note">(absolute precedence — blocked regardless of allowlist)</span></h4>
-          <div class="policy-list" id="policyDenylist">
-            ${res.denylist.length === 0 ? '<div class="policy-empty">No denied servers</div>' :
-              res.denylist.map(e => `<div class="policy-entry policy-deny">
-                <span class="policy-entry-name">${esc(e.serverName || e.serverUrl || JSON.stringify(e.serverCommand) || "?")}</span>
-                <span class="policy-entry-tier">${esc(e.tier)}</span>
-                ${e.tier !== "managed" ? `<button class="policy-remove-btn" data-action="remove-deny" data-entry='${esc(JSON.stringify(e))}'>✕</button>` : ""}
-              </div>`).join("")}
-          </div>
-          <div class="policy-add-row">
-            <input type="text" class="policy-add-input" id="denyInput" placeholder="Server name to deny...">
-            <button class="policy-add-btn" data-action="add-deny">+ Deny</button>
-          </div>
-        </div>
-        <div class="policy-section">
-          <h4>Allowlist <span class="policy-note">(if set, only these servers are allowed)</span></h4>
-          <div class="policy-list" id="policyAllowlist">
-            ${res.allowlist.length === 0 ? '<div class="policy-empty">No allowlist set — all servers allowed by default</div>' :
-              res.allowlist.map(e => `<div class="policy-entry policy-allow">
-                <span class="policy-entry-name">${esc(e.serverName || e.serverUrl || JSON.stringify(e.serverCommand) || "?")}</span>
-                <span class="policy-entry-tier">${esc(e.tier)}</span>
-                ${e.tier !== "managed" ? `<button class="policy-remove-btn" data-action="remove-allow" data-entry='${esc(JSON.stringify(e))}'>✕</button>` : ""}
-              </div>`).join("")}
-          </div>
-          <div class="policy-add-row">
-            <input type="text" class="policy-add-input" id="allowInput" placeholder="Server name to allow...">
-            <button class="policy-add-btn" data-action="add-allow">+ Allow</button>
-          </div>
-        </div>
-        <div class="policy-section">
-          <h4>Server Status</h4>
-          <div class="policy-server-list">
-            ${res.servers.map(s => `<div class="policy-server-row">
-              <span class="policy-badge policy-${s.status}">${s.status === "allowed" ? "✅" : s.status === "denied" ? "❌" : "⚠️"}</span>
-              <span class="policy-server-name">${esc(s.name)}</span>
-              <span class="policy-server-status">${esc(s.status)}</span>
-            </div>`).join("")}
-          </div>
-        </div>
-      </div>
+  const body = document.getElementById("policyBody");
+  body.innerHTML = `<div class="ctx-budget-loading">Loading policy…</div>`;
+
+  const [policyRes, scanRes] = await Promise.all([
+    fetchJson("/api/mcp-policy"),
+    data ? Promise.resolve(data) : fetchJson("/api/scan"),
+  ]);
+
+  if (!policyRes.ok) { body.innerHTML = `<div class="policy-empty">Failed to load policy</div>`; return; }
+
+  // Build unique server list with approval state
+  const allMcp = (scanRes?.items || []).filter(i => i.category === "mcp");
+  const serverMap = new Map(); // name → { scopes: Set, approvalState, config }
+  for (const item of allMcp) {
+    if (!serverMap.has(item.name)) {
+      serverMap.set(item.name, { scopes: new Set(), approvalState: null, config: item.mcpConfig });
+    }
+    const entry = serverMap.get(item.name);
+    entry.scopes.add(item.scopeId === "global" ? "global" : (item.scopeId || "").split("-").pop() || item.scopeId);
+    if (item.approvalState) entry.approvalState = item.approvalState;
+  }
+
+  // Find policy status per server
+  const statusMap = {};
+  for (const s of policyRes.servers) statusMap[s.name] = s.status;
+
+  // Pending approval servers
+  const pending = allMcp.filter(i => i.approvalState === "pending");
+  const rejected = allMcp.filter(i => i.approvalState === "rejected");
+
+  let html = "";
+
+  // Denied servers
+  html += `<div class="policy-section">
+    <div class="policy-section-hdr">❌ Denied (${policyRes.denylist.length})</div>
+    ${policyRes.denylist.length === 0 ? '<div class="policy-empty">No denied servers</div>' :
+      policyRes.denylist.map(e => `<div class="policy-entry policy-deny">
+        <span class="policy-entry-name">${esc(e.serverName || e.serverUrl || JSON.stringify(e.serverCommand) || "?")}</span>
+        <span class="policy-entry-tier">${esc(e.tier)}</span>
+        ${e.tier !== "managed" ? `<button class="policy-remove-btn" data-action="remove-deny" data-entry='${esc(JSON.stringify(e))}'>✕</button>` : ""}
+      </div>`).join("")}
+  </div>`;
+
+  // Allowed servers
+  html += `<div class="policy-section">
+    <div class="policy-section-hdr">✅ Allowed (${policyRes.allowlist.length})</div>
+    ${policyRes.allowlist.length === 0 ? '<div class="policy-empty">No allowlist — all servers allowed by default</div>' :
+      policyRes.allowlist.map(e => `<div class="policy-entry policy-allow">
+        <span class="policy-entry-name">${esc(e.serverName || e.serverUrl || JSON.stringify(e.serverCommand) || "?")}</span>
+        <span class="policy-entry-tier">${esc(e.tier)}</span>
+        ${e.tier !== "managed" ? `<button class="policy-remove-btn" data-action="remove-allow" data-entry='${esc(JSON.stringify(e))}'>✕</button>` : ""}
+      </div>`).join("")}
+  </div>`;
+
+  // Pending approval
+  if (pending.length > 0 || rejected.length > 0) {
+    html += `<div class="policy-section">
+      <div class="policy-section-hdr">○ Project Approval (${pending.length} pending, ${rejected.length} rejected)</div>
+      ${pending.map(i => `<div class="policy-server-row"><span class="approval-badge approval-pending">○ Pending</span><span class="policy-server-name">${esc(i.name)}</span></div>`).join("")}
+      ${rejected.map(i => `<div class="policy-server-row"><span class="approval-badge approval-rejected">✗ Rejected</span><span class="policy-server-name">${esc(i.name)}</span></div>`).join("")}
     </div>`;
+  }
 
-  document.body.appendChild(overlay);
+  // All servers with dropdown
+  html += `<div class="policy-section">
+    <div class="policy-section-hdr">All Servers (${serverMap.size})</div>
+    ${[...serverMap.entries()].map(([name, info]) => {
+      const status = statusMap[name] || "no-policy";
+      const icon = status === "allowed" ? "✅" : status === "denied" ? "❌" : "⚠️";
+      const scopes = [...info.scopes].join(", ");
+      return `<div class="policy-server-row">
+        <span>${icon}</span>
+        <span class="policy-server-name">${esc(name)}</span>
+        <span class="policy-server-scopes">${esc(scopes)}</span>
+        <select class="policy-action-select" data-server="${esc(name)}">
+          <option value="" ${status === "no-policy" ? "selected" : ""}>—</option>
+          <option value="allow" ${status === "allowed" ? "selected" : ""}>Allow</option>
+          <option value="deny" ${status === "denied" ? "selected" : ""}>Deny</option>
+        </select>
+      </div>`;
+    }).join("")}
+  </div>`;
 
-  // Close handlers
-  overlay.querySelector(".policy-close-btn").addEventListener("click", () => overlay.remove());
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  body.innerHTML = html;
 
-  // Remove entry handlers
-  overlay.querySelectorAll(".policy-remove-btn").forEach(btn => {
+  // Bind remove buttons
+  body.querySelectorAll(".policy-remove-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
       const action = btn.dataset.action;
       const rawEntry = JSON.parse(btn.dataset.entry);
@@ -2858,23 +2878,53 @@ async function openMcpPolicyPanel() {
       if (rawEntry.serverUrl) entry.serverUrl = rawEntry.serverUrl;
       if (rawEntry.serverCommand) entry.serverCommand = rawEntry.serverCommand;
       const result = await fetchJson("/api/mcp-policy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, entry }) });
-      if (result.ok) { overlay.remove(); openMcpPolicyPanel(); toast("Policy updated"); }
+      if (result.ok) { openMcpPolicyPanel(); toast("Policy updated"); }
       else toast("Failed to update policy", true);
     });
   });
 
-  // Add entry handlers
-  overlay.querySelectorAll(".policy-add-btn").forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const action = btn.dataset.action;
-      const input = action.includes("deny") ? overlay.querySelector("#denyInput") : overlay.querySelector("#allowInput");
-      const name = input.value.trim();
-      if (!name) return;
-      const result = await fetchJson("/api/mcp-policy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, entry: { serverName: name } }) });
-      if (result.ok) { overlay.remove(); openMcpPolicyPanel(); toast("Policy updated"); }
-      else toast("Failed to update policy", true);
+  // Bind dropdown changes
+  body.querySelectorAll(".policy-action-select").forEach(sel => {
+    sel.addEventListener("change", async () => {
+      const name = sel.dataset.server;
+      const value = sel.value;
+      const currentStatus = statusMap[name] || "no-policy";
+
+      // Remove from current list first
+      if (currentStatus === "allowed") {
+        await fetchJson("/api/mcp-policy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "remove-allow", entry: { serverName: name } }) });
+      } else if (currentStatus === "denied") {
+        await fetchJson("/api/mcp-policy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "remove-deny", entry: { serverName: name } }) });
+      }
+
+      // Add to new list
+      if (value === "allow") {
+        await fetchJson("/api/mcp-policy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add-allow", entry: { serverName: name } }) });
+      } else if (value === "deny") {
+        await fetchJson("/api/mcp-policy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "add-deny", entry: { serverName: name } }) });
+      }
+
+      openMcpPolicyPanel();
+      toast(`${name}: ${value || "no policy"}`);
     });
   });
+}
+
+function closePolicyPanel() {
+  document.getElementById("policyPanel").classList.add("hidden");
+}
+
+function setupPolicyPanel() {
+  const btn = document.getElementById("mcpPolicyBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    // Close other panels
+    document.getElementById("ctxBudgetPanel")?.classList.add("hidden");
+    document.getElementById("securityPanel")?.classList.add("hidden");
+    closeDetail();
+    openMcpPolicyPanel();
+  });
+  document.getElementById("policyClose")?.addEventListener("click", closePolicyPanel);
 }
 
 function cssEscape(value) {

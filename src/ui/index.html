@@ -22,7 +22,10 @@
         <button class="theme-btn" id="themeToggle" type="button">◐</button>
       </div>
 
-      <button class="sidebar-security-btn" id="securityScanBtn" type="button">🛡️ Security Scan</button>
+      <div class="sidebar-btn-row">
+        <button class="sidebar-security-btn sidebar-half-btn" id="securityScanBtn" type="button">🛡️ Scan</button>
+        <button class="sidebar-security-btn sidebar-half-btn sidebar-policy-btn" id="mcpPolicyBtn" type="button">📋 Policy</button>
+      </div>
       <input class="sidebar-search" id="searchInput" type="text" placeholder="Search...">
 
       <div class="sidebar-tree" id="sidebarTree"></div>
@@ -182,6 +185,17 @@
 
       <div class="security-footer hidden" id="securityFooter">
         <div class="security-footer-note" id="securityFooterNote"></div>
+      </div>
+    </div>
+
+    <div class="detail hidden" id="policyPanel">
+      <div class="detail-top">
+        <h2>📋 MCP Server Policy</h2>
+        <button class="detail-x" id="policyClose" type="button">✕</button>
+      </div>
+      <div class="policy-panel-note">Policy applies globally — deny/allow lists merge across all scopes. Deny always wins.</div>
+      <div class="policy-panel-body" id="policyBody">
+        <div class="ctx-budget-loading">Loading policy…</div>
       </div>
     </div>
   </div>
