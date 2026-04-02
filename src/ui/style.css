@@ -444,6 +444,11 @@ body {
   border-radius: 10px;
 }
 
+.approval-badge { font-size: 0.55rem; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+.approval-approved { background: oklch(0.85 0.12 145); color: oklch(0.3 0.1 145); }
+.approval-rejected { background: oklch(0.85 0.12 25); color: oklch(0.35 0.15 25); }
+.approval-pending { background: oklch(0.88 0.1 85); color: oklch(0.4 0.12 85); }
+
 .mcp-policy-btn {
   margin-left: 8px;
   padding: 2px 10px;

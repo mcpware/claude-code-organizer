@@ -986,7 +986,7 @@ function renderItem(item) {
       <span class="item-ico">${icon}</span>
       ${effectiveBadge}
       <span class="item-name">${esc(item.name)}</span>
-      ${secBadgeHtml}${blFlagHtml}
+      ${secBadgeHtml}${blFlagHtml}${item.approvalState ? `<span class="approval-badge approval-${item.approvalState}">${item.approvalState === "approved" ? "APPROVED" : item.approvalState === "rejected" ? "REJECTED" : "PENDING"}</span>` : ""}
       ${badgeHtml}
       <span class="item-desc">${item.category === "mcp" ? "" : esc(desc)}</span>
       ${actions}

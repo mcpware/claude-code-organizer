@@ -622,6 +622,26 @@ async function scanMcpServers(scope) {
     } catch {}
   }
 
+  // Add approval state for project-scoped servers from .mcp.json
+  // Mirrors ccsrc getProjectMcpServerStatus: approved/rejected/pending
+  if (scope.id !== "global") {
+    try {
+      const userSettingsRaw = await safeReadFile(join(CLAUDE_DIR, "settings.json"));
+      if (userSettingsRaw) {
+        const userSettings = JSON.parse(userSettingsRaw);
+        const enabled = Array.isArray(userSettings.enabledMcpjsonServers) ? userSettings.enabledMcpjsonServers : [];
+        const disabled = Array.isArray(userSettings.disabledMcpjsonServers) ? userSettings.disabledMcpjsonServers : [];
+        for (const item of items) {
+          if (item.fileName === ".mcp.json") {
+            if (enabled.includes(item.name)) item.approvalState = "approved";
+            else if (disabled.includes(item.name)) item.approvalState = "rejected";
+            else item.approvalState = "pending";
+          }
+        }
+      }
+    } catch {}
+  }
+
   return items;
 }
 
