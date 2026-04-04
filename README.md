@@ -263,7 +263,7 @@ MIT
 ## Updates
 
 ### 2026-04-03
-- Fixed citation errors in activation probe research report (AUROC not accuracy, TransformerLens attribution, added missing references)
+- Updated research report with 6 additional references and expanded related work section (Kiji Inspector, Safe-SAIL, CC-Delta, MCP Threat Modeling)
 
 ### 2026-04-02
 - v0.16.1: Frontmatter config UI, scanner fixes, MCP panel scope-follow
