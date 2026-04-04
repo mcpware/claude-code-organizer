@@ -30,7 +30,7 @@ I'm not an interpretability researcher, so here's how I understand these concept
 - **Residual stream:** The main data highway through the model. Each layer reads from it, does some processing, writes back. This is where I tap in.
 - **Probe:** A simple classifier (I used logistic regression — same as what I'd use at work) trained on activation snapshots. If even a simple classifier can separate clean from poisoned using just these numbers, it means the model has already organized the information — I'm just reading it out.
 - **SAE (Sparse Autoencoder):** A tool that breaks activations into more interpretable pieces. Instead of 768 tangled numbers, you get thousands of features where each one tends to fire for a narrower concept. I haven't used SAEs yet — that's the fellowship work.
-- **TransformerLens:** The Python library I used to extract activations. Built by Neel Nanda during his time at Anthropic.
+- **TransformerLens:** The Python library I used to extract activations. Built by Neel Nanda after his time at Anthropic.
 - **TF-IDF:** Turns text into numbers based on word frequency. Catches vocabulary patterns but doesn't understand meaning.
 - **Sentence-BERT:** A neural network that understands meaning, not just word counts. Smarter than TF-IDF, but still works on the text itself.
 
@@ -39,6 +39,8 @@ I'm not an interpretability researcher, so here's how I understand these concept
 ## How This Relates to Prior Work
 
 Activation probing for safety-relevant signals isn't new, but each prior approach differs from mine. TaskTracker (Abdelnabi et al., 2024) used activation *deltas* — comparing the model's activations on the same input with and without an injected prompt — to detect prompt injection. My approach probes absolute activations on standalone tool descriptions, without needing a "clean" reference input. This means it could work as a single-pass check at tool registration time, not just at runtime. MindGuard (Wang et al., 2025) uses attention patterns to detect MCP poisoning; I use residual stream activations, which capture the full layer output rather than just token-to-token attention weights. RAGLens (Xiong et al., ICLR 2026) showed that SAE features can detect hallucination — including a single feature (Feature 22790) that fires on fabricated dates. Whether SAE features decompose *intent* (safe vs. malicious) as cleanly as *factual grounding* is the open question my fellowship proposal targets.
+
+Most recently, Dataiku released Kiji Inspector (March 2026), the first open-source tool using SAE analysis specifically on agent tool selection activations — capturing the activation at the token position where the model commits to a tool choice and decomposing it via SAE features. Kiji focuses on explainability (understanding why an agent chose a tool), not security detection. Whether the same SAE decomposition can distinguish safe from malicious tool descriptions is the open question this work targets. Additionally, a 2025 paper ('False Sense of Security,' arXiv:2509.03888) showed that probing classifiers can learn surface patterns rather than semantic content, failing on out-of-distribution data — a concern partially addressed by the cross-style generalization experiments in Round 5b (71-73% cross-style vs 97% in-distribution).
 
 ---
 
@@ -124,7 +126,7 @@ I ran a partial control: 15 pairs where both sides use neutral, matter-of-fact l
 
 **GPT-2 is tiny and old — and has no concept of tool use.** 124M parameters from 2019. It doesn't know what MCP is or what a tool description means — it just processes these as plain English text. The fact that even a model with no tool-use training encodes a detectable distinction is interesting. Whether the signal is stronger or weaker in larger models that actually process tool descriptions is genuinely unknown — larger representations could make it easier (richer features) or harder (more distributed, less linearly separable). That's an empirical question for the fellowship.
 
-**All the data is synthetic.** No MCP tool description poisoning (malicious instructions hidden in tool metadata) has been confirmed in the wild as of March 2026 — though supply chain attacks on MCP packages have occurred (e.g., postmark-mcp, Sep 2025). My descriptions are my best guess at what description-level attacks would look like, but real attackers might be more creative.
+**All the data is synthetic.** Two MCP supply chain attacks have been confirmed in the wild as of March 2026: postmark-mcp (Sep 2025, npm package BCC'd emails to attacker) and SmartLoader/Oura Ring MCP clone (Feb 2026, deployed StealC infostealer). No confirmed case of pure description-level poisoning (malicious instructions hidden solely in tool metadata) has been documented, though the attack surface is well-established. My descriptions are my best guess at what description-level attacks would look like, but real attackers might be more creative.
 
 **All descriptions were LLM-generated, not human-written.** Using four different models reduces single-source bias, but all four are large language models — they may share generation patterns that differ systematically from human-authored text. Real-world poisoned descriptions would be crafted by human attackers or purpose-built generation pipelines. Testing on hand-written poisoned descriptions from security researchers would be a stronger control.
 
@@ -138,7 +140,7 @@ My experiments confirm the same principle from prior work (see "How This Relates
 
 SAE features could answer the "what." If they decompose *intent* — safe vs. malicious behavior — as cleanly as RAGLens's Feature 22790 decomposes *factual grounding*, we'd have both a detection tool and an explanation of what the model is picking up on.
 
-And I want to be clear about what I'm proposing: detection, not correction. Basu et al. (2026) showed that probes detect model errors at 98.2% accuracy, but SAE-based correction methods fixed 0 out of 79 errors. The model knows something is off but you can't force it to act on that knowledge. So the right design is: probe detects, external system acts. Flag it for a human. Don't try to fix the model from inside.
+And I want to be clear about what I'm proposing: detection, not correction. Basu et al. (2026) showed that probes detect model errors at 98.2% AUROC, but SAE-based correction methods produced zero effect despite identifying 3,695 significant features. The model knows something is off but you can't force it to act on that knowledge. So the right design is: probe detects, external system acts. Flag it for a human. Don't try to fix the model from inside.
 
 The big question is whether SAE features can do what raw activations can't — generalize across attack styles. Right now I'm stuck at 71-73% cross-style with raw activations. If SAE features isolate a "malicious intent" concept the way RAGLens's Feature 22790 isolates "fabricated content," cross-style generalization should improve because the feature fires on the concept, not the specific wording. That's the first experiment I'd run.
 
@@ -184,5 +186,11 @@ I used Claude Code to accelerate the implementation. The research questions, exp
 9. Alain, G. & Bengio, Y. (2017). "Understanding Intermediate Layers Using Linear Classifier Probes." ICLR Workshop.
 10. Abdelnabi, S. et al. (2024). "Get My Drift? Catching LLM Task Drift with Activation Deltas." arXiv:2406.00799.
 11. Reimers, N. & Gurevych, I. (2019). "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks." EMNLP.
-12. OWASP. (2026). "MCP Top 10."
+12. OWASP. (2026). "MCP Top 10." (Beta/draft v0.1, incubator project — not yet a finalized publication.)
 13. Anthropic. (2026). "Sabotage Risk Report: Claude Opus 4.6."
+14. Hapke, H. & Cardozo, D. (2026). 'Opening the Black Box: Mechanistic Interpretability for AI Agent Tool Selection Using Sparse Autoencoders.' Dataiku/Kiji Inspector.
+15. arXiv:2509.03888. (2025). 'False Sense of Security.' (Probing classifiers learn surface patterns, fail OOD.)
+16. arXiv:2509.18127. (2025). 'Safe-SAIL.' (SAE mapping 2,059 neurons to safety concepts.)
+17. arXiv:2602.12418. (2026). 'SAEs are Capable LLM Jailbreak Mitigators.' (CC-Delta: SAE sparse feature steering for jailbreak detection.)
+18. arXiv:2604.01151. (2026). 'Detecting Multi-Agent Collusion Through Multi-Agent Interpretability.' (Linear probes detect agent collusion, 1.00 AUROC.)
+19. arXiv:2603.22489. (2026). 'MCP Threat Modeling.' (STRIDE/DREAD analysis of 5 MCP components, tests 7 clients.)
