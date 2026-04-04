@@ -259,3 +259,54 @@ MIT
 [ithiria894](https://github.com/ithiria894) — Building tools for the Claude Code ecosystem.
 
 [![claude-code-organizer MCP server](https://glama.ai/mcp/servers/mcpware/claude-code-organizer/badges/card.svg)](https://glama.ai/mcp/servers/mcpware/claude-code-organizer)
+
+## Updates
+
+### 2026-04-03
+- Fixed citation errors in activation probe research report (AUROC not accuracy, TransformerLens attribution, added missing references)
+
+### 2026-04-02
+- v0.16.1: Frontmatter config UI, scanner fixes, MCP panel scope-follow
+- Added session cost breakdown panel
+- v0.16.0: MCP Controls (per-project disable/enable), source-verified security features, context budget fix
+- Fixed fetchJson not passing options to fetch (broke all POST calls)
+- Fixed disabled MCP list not surviving Show Effective toggle
+
+### 2026-04-01
+- Added MCP Controls panel with fuzzy search and dropdown selector for per-project disable list
+- Added MCP allowlist/denylist policy editor with enterprise exclusive control mode detection
+- Added MCP server approval state display and duplicate detection using Claude Code signature logic
+- Fixed context budget constants to match Claude Code source values
+- v0.15.0: Markdown preview + new session button in category header
+
+### 2026-03-31
+- Added AI-friendly repository index (AI_INDEX.md)
+
+### 2026-03-30
+- v0.14.0: Extracted effective logic into shared module, 30 unit tests for effective rules and move destinations
+- v0.13.0: Show Effective with per-category scope rules, tree view toggle, "Why it applies" in detail panel
+- Added collapsible rule bar explaining per-category inheritance rules
+- Added move warnings for MCP/command/agent; locked plan/rule moves
+- v0.12.0: Show Effective mode with per-category official scope rules
+- Added 31 edge case tests + path correctness tests verifying CCO paths match Claude Code locations
+
+### 2026-03-29
+- Added activation probe experiments, datasets, and benchmark in research/
+- Fixed encoded project paths with underscores via DFS backtracking (#17)
+
+### 2026-03-28
+- v0.10.3: Fixed Windows path validation and moveMcp for .claude.json project scope (#16)
+- Added AI Coding Daily YouTube walkthrough to README
+
+### 2026-03-27
+- v0.10.2: Rewrote all 12 README translations with native voice
+- Added privacy statement, engineering badges, and team/CI to roadmap
+
+### 2026-03-26
+- Added CONTRIBUTING.md, research docs, and history module
+- Fixed context budget accuracy and Windows editor open (#6)
+- Fixed Windows path resolution for project scopes (#3)
+- Fixed auto-shutdown when all browser tabs close (#2)
+
+### 2026-03-25
+- v0.7.0: Context Budget — see token cost before you type anything
