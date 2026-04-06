@@ -14,6 +14,8 @@ import { homedir } from 'node:os';
 
 const args = process.argv.slice(2);
 const isMcpMode = args.includes('--mcp');
+const distillIdx = args.indexOf('--distill');
+const isDistillMode = distillIdx !== -1;
 
 // ── Pre-flight check: verify ~/.claude/ exists and is readable ──
 // Skip for MCP mode — server returns empty results if ~/.claude/ missing
@@ -80,7 +82,32 @@ async function checkForUpdate() {
   return null;
 }
 
-if (isMcpMode) {
+if (isDistillMode) {
+  // CLI distill mode: npx @mcpware/claude-code-organizer --distill <session.jsonl>
+  const sessionPath = args[distillIdx + 1];
+  if (!sessionPath || !sessionPath.endsWith('.jsonl')) {
+    console.error('\n  Usage: npx @mcpware/claude-code-organizer --distill <session.jsonl>\n');
+    process.exit(1);
+  }
+  const { resolve } = await import('node:path');
+  const { distillSession } = await import('../src/session-distiller.mjs');
+  const fmt = b => b < 1024 ? b + 'B' : b < 1048576 ? (b / 1024).toFixed(1) + 'K' : (b / 1048576).toFixed(1) + 'M';
+  try {
+    const r = await distillSession(resolve(sessionPath));
+    const s = r.stats;
+    console.log(`\n  Session Distiller — by @mcpware/claude-code-organizer`);
+    console.log(`  ─────────────────────────────────────────────────────`);
+    console.log(`  Backup:    ${r.backupPath} (${fmt(s.backupBytes)})`);
+    console.log(`  Distilled: ${r.outputPath} (${fmt(s.outputBytes)}, ${s.reduction} reduction)`);
+    if (s.indexEntries > 0) {
+      console.log(`  Index:     ${s.indexPath} (${s.indexEntries} refs)`);
+    }
+    console.log(`  Lines:     ${s.inputLines} → ${s.keptLines}\n`);
+  } catch (err) {
+    console.error(`\n  Error: ${err.message}\n`);
+    process.exit(1);
+  }
+} else if (isMcpMode) {
   // MCP server mode — AI clients connect via stdio
   await import('../src/mcp-server.mjs');
 } else {

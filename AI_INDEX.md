@@ -104,6 +104,33 @@
 
 ---
 
+## Utilities (CLI & offline tools)
+
+### Session Distiller
+- Entry: `src/session-distiller.mjs`
+- Search: `distillSession`, `distillBlocks`, `DISTILL_LIMITS`
+- Usage: `node src/session-distiller.mjs <session.jsonl>` or via `POST /api/session-distill` endpoint
+- Purpose: Extract conversation summary from full session JSONL, reduce size by ~90%, create backup + index
+- Creates: 
+  - `{sessionId}/backup-{origId}.jsonl` — copy of original session
+  - `{sessionId}/index.md` — distilled conversation with tool result summaries
+  - Injects distiller context message into distilled session
+- Tests: `tests/unit/test-trim-images.mjs` (integration)
+- Connects to:
+  - Server — `POST /api/session-distill` endpoint in `src/server.mjs`
+  - Scanner — reads distill artifacts as session bundles
+
+### Image Trimmer
+- Entry: `src/trim-images.mjs`
+- Usage: `node src/trim-images.mjs <session.jsonl>` or via `trim-images` skill
+- Purpose: Strip base64 image blocks from session JSONL when "image exceeds dimension limit"
+- Replaces: All `type: "image"` blocks with `[image redacted]` text placeholders
+- Handles: Images in message.content and inside tool_result blocks
+- Tests: `tests/unit/test-trim-images.mjs`
+- Skill: `~/.claude/skills/trim-images/SKILL.md`
+
+---
+
 ## Tests
 
 ### Unit tests
@@ -112,6 +139,8 @@
 - `test-effective-rules.mjs` — effective mode logic
 - `test-move-destinations.mjs` — mover destination validation
 - `test-path-correctness.mjs` — scope path decoding
+- `test-security-features.mjs` — security scanner patterns
+- `test-trim-images.mjs` — image block redaction in sessions
 
 ### E2E tests
 - Path: `tests/e2e/`

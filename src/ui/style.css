@@ -648,6 +648,10 @@ body {
 .act-open:hover { background: var(--border-light); }
 .act-del { background: transparent; color: var(--text-faint); }
 .act-del:hover { background: oklch(0.95 0.04 25); color: var(--danger); }
+.act-resume { background: var(--accent); color: white; border: none; }
+.act-resume:hover { background: var(--accent-hover); }
+.act-distill { background: var(--surface-inset); color: var(--text-secondary); border: 1px solid var(--border); }
+.act-distill:hover { background: oklch(0.92 0.05 280); color: oklch(0.45 0.15 280); }
 
 .detail-top { padding: 20px 20px; border-bottom: 1px solid var(--border-light); display: flex; align-items: center; }
 .detail-top h2 { font-size: 1.05rem; font-weight: 900; letter-spacing: -0.2px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

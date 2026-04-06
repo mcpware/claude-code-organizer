@@ -1111,6 +1111,7 @@ async function scanSessions(scope) {
       break;
     }
 
+    const isDistilled = name.startsWith("[distilled");
     items.push({
       category: "session",
       scopeId: scope.id,
@@ -1123,8 +1124,39 @@ async function scanSessions(scope) {
       mtime: s ? s.mtime.toISOString().slice(0, 16) : "",
       ctime: s ? s.birthtime.toISOString().slice(0, 16) : "",
       path: fullPath,
-      deletable: true, // sessions can be deleted but not moved
+      deletable: true,
+      bundle: isDistilled ? name : undefined,   // distilled sessions become bundle parents
     });
+
+    // Check for distill folder (same name as session ID) — add child items
+    if (isDistilled) {
+      const distillDir = join(scope.claudeProjectDir, sessionId);
+      try {
+        const distillEntries = await readdir(distillDir, { withFileTypes: true });
+        for (const de of distillEntries) {
+          if (!de.isFile()) continue;
+          const childPath = join(distillDir, de.name);
+          const cs = await safeStat(childPath);
+          const childLabel = de.name.startsWith("backup-") ? "📦 Backup: " + de.name
+            : de.name === "index.md" ? "📑 Index" : de.name;
+          items.push({
+            category: "session",
+            scopeId: scope.id,
+            name: childLabel,
+            fileName: de.name,
+            description: cs ? formatSize(cs.size) : "",
+            subType: "distill-artifact",
+            size: cs ? formatSize(cs.size) : "0B",
+            sizeBytes: cs ? cs.size : 0,
+            mtime: cs ? cs.mtime.toISOString().slice(0, 16) : "",
+            ctime: cs ? cs.birthtime.toISOString().slice(0, 16) : "",
+            path: childPath,
+            deletable: true,
+            bundle: name,   // same bundle as parent → shows as child
+          });
+        }
+      } catch { /* no distill folder — normal */ }
+    }
   }
 
   return items;

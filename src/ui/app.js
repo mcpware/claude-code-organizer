@@ -287,7 +287,7 @@ function setupFilterBar() {
 function setupItemList() {
   const itemList = document.getElementById("itemList");
 
-  itemList.addEventListener("click", (event) => {
+  itemList.addEventListener("click", async (event) => {
     const actionBtn = event.target.closest(".act-btn");
     if (actionBtn) {
       // MCP toggle doesn't need the item object — handle first
@@ -314,6 +314,36 @@ function setupItemList() {
         openInEditor(item.path);
       } else if (actionBtn.dataset.action === "delete") {
         openDeleteModal(item);
+      } else if (actionBtn.dataset.action === "resume") {
+        // Copy resume command to clipboard
+        const sessionId = item.fileName?.replace(/\.jsonl$/, "") || "";
+        const scope = getScopeById(item.scopeId);
+        const dir = scope?.repoDir || "~";
+        const cmd = `cd ${dir} && claude --resume ${sessionId}`;
+        navigator.clipboard.writeText(cmd).then(() => {
+          toast("Copied resume command — paste in terminal");
+        });
+      } else if (actionBtn.dataset.action === "distill") {
+        // Distill session via API
+        actionBtn.disabled = true;
+        actionBtn.textContent = "...";
+        try {
+          const resp = await fetch(`/api/session-distill?path=${encodeURIComponent(item.path)}`, { method: "POST" });
+          const data = await resp.json();
+          if (data.ok) {
+            toast(`Distilled: ${data.stats.reduction} reduction, ${data.stats.indexEntries || 0} indexed refs`);
+            actionBtn.textContent = "✓";
+            refreshUI(); // refresh list to show new distilled session
+          } else {
+            toast(`Error: ${data.error}`, true);
+            actionBtn.textContent = "Distill";
+            actionBtn.disabled = false;
+          }
+        } catch (err) {
+          toast(`Error: ${err.message}`, true);
+          actionBtn.textContent = "Distill";
+          actionBtn.disabled = false;
+        }
       }
       return;
     }
@@ -984,7 +1014,7 @@ function renderMainContent() {
         </div>
         <div class="cat-body${collapsed ? " collapsed" : ""}">
           ${category === "mcp" && data?.enterpriseMcp?.active ? `<div class="enterprise-banner">⚠️ Enterprise MCP Active — Only managed servers are loaded. User, project, and plugin servers are ignored.${data.enterpriseMcp.serverCount > 0 ? ` <strong>${data.enterpriseMcp.serverCount}</strong> managed server${data.enterpriseMcp.serverCount === 1 ? "" : "s"}.` : ""}</div>` : ""}
-          ${category === "skill"
+          ${(category === "skill" || category === "session")
             ? renderSkillCategory(scope.id, config.group, catItems)
             : `
               <div class="sortable-zone" data-scope="${esc(scope.id)}" data-group="${config.group || "none"}">
@@ -1015,14 +1045,19 @@ function renderSkillCategory(scopeId, group, items) {
   for (const [bundle, bundleItems] of bundles.entries()) {
     const bundleKey = `${scopeId}::${bundle}`;
     const collapsed = searchQuery ? false : !uiState.collapsedBundles.has(bundleKey);
-    const bundleName = bundle.split("/").pop() || bundle;
+    const isDistillBundle = bundle.startsWith("[distilled");
+    const bundleName = isDistillBundle ? bundle : (bundle.split("/").pop() || bundle);
+    const bundleIco = isDistillBundle ? "🧹" : "📦";
+    const childCount = isDistillBundle
+      ? pluralize(bundleItems.filter(i => i.subType === "distill-artifact").length, "file")
+      : pluralize(bundleItems.length, "skill");
     html += `
       <div class="bundle-group">
         <div class="bundle-row" data-bundle="${esc(bundle)}">
-          <span class="bundle-row-ico">📦</span>
+          <span class="bundle-row-ico">${bundleIco}</span>
           <span class="bundle-row-nm">${esc(bundleName)}</span>
-          <span class="bundle-row-src">${esc(bundle)}</span>
-          <span class="bundle-row-cnt">${pluralize(bundleItems.length, "skill")}</span>
+          ${isDistillBundle ? "" : `<span class="bundle-row-src">${esc(bundle)}</span>`}
+          <span class="bundle-row-cnt">${childCount}</span>
         </div>
         <div class="bundle-children${collapsed ? " collapsed" : ""}">
           <div class="sortable-zone" data-scope="${esc(scopeId)}" data-group="${group || "none"}">
@@ -1077,13 +1112,20 @@ function renderItem(item) {
   const mcpToggleBtn = item.category === "mcp"
     ? `<button type="button" class="act-btn ${isMcpDisabled ? "act-mcp-enable" : "act-mcp-disable"}" data-action="mcp-toggle" data-mcp-name="${esc(item.name)}" title="${isMcpDisabled ? "Re-enable in this project" : "Disable in this project"}">${isMcpDisabled ? "Enable" : "Disable"}</button>`
     : "";
-  const actions = (item.locked || isFromGlobal) ? (mcpToggleBtn ? `<span class="item-actions">${mcpToggleBtn}</span>` : "") : `
+  // Session rows get Resume + Distill instead of Move/Open/Del
+  const sessionActions = item.subType === "session" ? `
+    <span class="item-actions">
+      <button type="button" class="act-btn act-resume" data-action="resume" title="Copy resume command">Resume</button>
+      <button type="button" class="act-btn act-distill" data-action="distill" title="Distill session (backup + clean)">Distill</button>
+    </span>` : null;
+
+  const actions = sessionActions || ((item.locked || isFromGlobal) ? (mcpToggleBtn ? `<span class="item-actions">${mcpToggleBtn}</span>` : "") : `
     <span class="item-actions">
       ${(canMoveItem(item) || item.locked) ? `<button type="button" class="act-btn act-move" data-action="move">Move</button>` : ""}
       ${item.category !== "mcp" ? `<button type="button" class="act-btn act-open" data-action="open">Open</button>` : ""}
       ${canDeleteItem(item) ? `<button type="button" class="act-btn act-del" data-action="delete">Del</button>` : ""}
       ${mcpToggleBtn}
-    </span>`;
+    </span>`);
 
   const dragHandle = item.locked ? "" : `<span class="drag-handle" title="Drag to move">⠿</span>`;
 
@@ -1456,6 +1498,11 @@ function renderCcActions(item) {
         buttons.push({ ico: "💡", label: "", prompt: null, info: "Sessions can be resumed directly in Claude Code. Copy the command below and paste it in any terminal to continue where you left off." });
         buttons.push({ ico: "💬", label: "Resume Session", prompt: `${cdCmd}claude --resume ${sessionId}\n\n# Session file: ${item.path}` });
         buttons.push({ ico: "📋", label: "Summarize", prompt: `I have a Claude Code session at:\n${item.path}\n\nPlease read this session file and give me a summary:\n1. What was this session about?\n2. What was accomplished?\n3. Were there any unfinished tasks or pending actions?\n4. What files were modified?` });
+
+        // Not yet distilled — show distill option in CC actions
+        if (!item.name?.startsWith("[distilled")) {
+          buttons.push({ ico: "🧹", label: "Distill Session", prompt: `Please distill this session for me:\n${item.path}\n\nThis will:\n1. Back up the original (CC compact will destroy it otherwise)\n2. Create a clean resumable session\n3. Generate an index of large tool results` });
+        }
       }
       break;
     }

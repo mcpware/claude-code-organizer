@@ -8,7 +8,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/mcpware/claude-code-organizer)](https://github.com/mcpware/claude-code-organizer/network/members)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-258%20passing-brightgreen)](https://github.com/mcpware/claude-code-organizer)
+[![Tests](https://img.shields.io/badge/tests-263%20passing-brightgreen)](https://github.com/mcpware/claude-code-organizer)
 [![Zero Telemetry](https://img.shields.io/badge/telemetry-zero-blue)](https://github.com/mcpware/claude-code-organizer)
 [![MCP Security](https://img.shields.io/badge/MCP-Security%20Scanner-red)](https://github.com/mcpware/claude-code-organizer)
 [![Awesome MCP](https://img.shields.io/badge/Awesome-MCP%20Servers-fc60a8?logo=awesomelists&logoColor=white)](https://github.com/punkpeye/awesome-mcp-servers)
@@ -17,7 +17,7 @@ English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [�
 
 **Claude Code Organizer (CCO)** is a free, open-source dashboard that lets you manage all Claude Code configuration — memories, skills, MCP servers, settings, agents, rules, and hooks — across global and project scopes. It includes a security scanner for MCP tool poisoning and prompt injection, a per-item context token budget tracker, per-project MCP enable/disable controls, and bulk cleanup for duplicate configs. All without leaving the window.
 
-> **v0.16.0** — Context budget constants and MCP security features now verified against Claude Code's leaked source. MCP Controls lets you disable servers per-project, matching `/mcp disable` behavior exactly.
+> **v0.17.0** — Session Distiller strips bloated sessions down to ~10% of their original size while keeping every word of conversation intact. Image Trimmer removes base64 screenshots that trigger "image exceeds dimension limit" warnings. Both tools run from the dashboard or CLI.
 
 > Scan for poisoned MCP servers. Reclaim wasted context tokens. Disable MCP servers per-project. Find and delete duplicate memories. Move misplaced configs where they belong.
 
@@ -25,7 +25,7 @@ English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [�
 
 ![Claude Code Organizer Demo](docs/demo.gif)
 
-<sub>258 tests (105 unit + 153 E2E) | Zero dependencies | Demo recorded by AI using [Pagecast](https://github.com/mcpware/pagecast)</sub>
+<sub>263 tests (110 unit + 153 E2E) | Zero dependencies | Demo recorded by AI using [Pagecast](https://github.com/mcpware/pagecast)</sub>
 
 > 100+ stars in 5 days. Built by a CS dropout who found 140 invisible config files controlling Claude and decided no one should have to `cat` each one. First open source project — thank you to everyone who starred, tested, and reported issues.
 
@@ -76,6 +76,7 @@ Or run directly: `npx @mcpware/claude-code-organizer`
 | Undo every action | **Yes** | No | No | No |
 | Bulk operations | **Yes** | No | No | No |
 | Zero-install (`npx`) | **Yes** | Varies | No (Tauri/Electron) | No (VS Code) |
+| Session distillation + image trimming | **Yes** | No | No | No |
 | MCP tools (AI-accessible) | **Yes** | No | No | No |
 
 ## Context Budget: See How Many Tokens Claude Code Pre-Loads
@@ -141,6 +142,40 @@ Built by reverse-engineering Claude Code's leaked source (`~/.claude.json` → `
 - Per-project — disabling in one project doesn't affect others
 - Persisted to `~/.claude.json` (same file Claude Code uses)
 
+## Session Distiller: Reclaim Bloated Sessions
+
+Claude Code sessions grow fast. After a few hours of coding, a single session can hit 70MB — full of base64 screenshots, multi-thousand-line tool outputs, and file contents you'll never need again. When you `--resume` that session, you're burning context on noise.
+
+Session Distiller fixes this. It reads a session JSONL, keeps every word of your actual conversation, and strips tool results down to what matters:
+
+- **Edit results** — keeps the file path and a preview of old/new strings (200 chars each)
+- **Bash results** — keeps head 5 + tail 5 lines of output
+- **Read results** — stripped entirely (the file is still on disk, Claude can re-read it)
+- **Agent results** — keeps up to 2000 chars (research reports are worth preserving)
+- **Write results** — keeps file path and a head/tail preview
+
+The original session is backed up before anything changes. An index file is generated so you can see what was kept and where to find the full version.
+
+**From the dashboard:** Click the ✂ Distill button on any session row. The distilled session appears as an expandable bundle showing the backup and index files.
+
+**From CLI:**
+
+```bash
+npx @mcpware/claude-code-organizer --distill <session.jsonl>
+```
+
+**Typical results:** 70MB session → 7MB distilled. 90% reduction, zero conversation loss.
+
+### Image Trimmer
+
+Sometimes you just need to remove screenshots — not distill the whole session. The image trimmer replaces every base64 image block with an `[image redacted]` placeholder. Nothing else changes.
+
+```bash
+node src/trim-images.mjs <session.jsonl>
+```
+
+Or invoke from Claude Code directly with the `/trim-images` skill when you see the "image exceeds dimension limit" warning.
+
 ## Verified Against Claude Code Source
 
 When Anthropic's Claude Code source was leaked (April 2026), we used it to verify and improve CCO's accuracy:
@@ -166,7 +201,7 @@ Every constant, merge rule, and policy check cites the specific source file it w
 | Agents (subagents) | Yes | Yes | Yes | Global + Project |
 | Rules (project constraints) | Yes | — | Yes | Global + Project |
 | Plans | Yes | — | Yes | Global + Project |
-| Sessions | Yes | — | Yes | Project only |
+| Sessions (with distill + image trim) | Yes | — | Yes | Project only |
 | Config (CLAUDE.md, settings.json) | Yes | Locked | — | Global + Project |
 | Hooks | Yes | Locked | — | Global + Project |
 | Plugins | Yes | Locked | — | Global only |
@@ -194,6 +229,8 @@ Every constant, merge rule, and policy check cites the specific source file it w
 | **Security Scanner** | ✅ Done | 60 patterns, 9 deobfuscation techniques, rug-pull detection, NEW/CHANGED/UNREACHABLE badges |
 | **MCP Controls** | ✅ Done | Per-project disable/enable, verified against Claude Code source |
 | **Source-Verified Budget** | ✅ Done | Context budget constants matched to leaked Claude Code source |
+| **Session Distiller** | ✅ Done | Strip bloated sessions to ~10% size, keeping all conversation text. Backup + index + bundle UI |
+| **Image Trimmer** | ✅ Done | Remove base64 images from sessions. Invokable as `/trim-images` skill |
 | **Config Health Score** | 📋 Planned | Per-project health score with actionable recommendations |
 | **Cross-Harness Portability** | 📋 Planned | Convert skills/configs between Claude Code ↔ Cursor ↔ Codex ↔ Gemini CLI |
 | **CLI / JSON Output** | 📋 Planned | Run scans headless for CI/CD pipelines — `cco scan --json` |
@@ -261,6 +298,13 @@ MIT
 [![claude-code-organizer MCP server](https://glama.ai/mcp/servers/mcpware/claude-code-organizer/badges/card.svg)](https://glama.ai/mcp/servers/mcpware/claude-code-organizer)
 
 ## Updates
+
+### 2026-04-06
+- v0.17.0: Session Distiller — strip bloated sessions to ~10% size while preserving all conversation text
+- Added image trimmer utility (`trim-images.mjs`) and `/trim-images` skill
+- Session bundles in dashboard tree view (expand to see backup + index files)
+- Distill button on session rows, CLI `--distill` flag, API endpoint
+- 5 new unit tests for image trimmer (110 total tests passing)
 
 ### 2026-04-03
 - Updated research report with 6 additional references and expanded related work section (Kiji Inspector, Safe-SAIL, CC-Delta, MCP Threat Modeling)

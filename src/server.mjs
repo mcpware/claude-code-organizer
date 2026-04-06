@@ -799,6 +799,28 @@ async function handleRequest(req, res) {
     }
   }
 
+  // POST /api/session-distill?path=... — distill a session (backup + clean JSONL + index)
+  if (path === "/api/session-distill" && req.method === "POST") {
+    const filePath = url.searchParams.get("path");
+    if (!filePath || !filePath.endsWith(".jsonl") || !isPathAllowed(filePath)) {
+      return json(res, { ok: false, error: "Invalid or disallowed session path" }, 400);
+    }
+    try {
+      const { distillSession } = await import("./session-distiller.mjs");
+      const result = await distillSession(filePath);
+      cachedData = null; // bust scan cache so new session appears
+      return json(res, {
+        ok: true,
+        distilled: result.outputPath,
+        backup: result.backupPath,
+        sessionId: result.sessionId,
+        stats: result.stats,
+      });
+    } catch (err) {
+      return json(res, { ok: false, error: err.message }, 500);
+    }
+  }
+
   // GET /api/browse-dirs?path=... — list subdirectories for folder picker
   if (path === "/api/browse-dirs" && req.method === "GET") {
     const dirPath = url.searchParams.get("path") || HOME;
