@@ -1663,6 +1663,89 @@ body {
 .dark .d-btn-cost { background: oklch(0.58 0.14 45 / 0.15); color: oklch(0.72 0.12 45); }
 .dark .d-btn-cost:hover { background: oklch(0.58 0.14 45 / 0.25); }
 
+/* ── What's New Modal ───────────────────────────────────────────── */
+
+.wn-modal {
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  overflow: hidden;
+}
+
+.wn-hdr {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 16px;
+  background: linear-gradient(135deg, oklch(0.22 0.06 175), oklch(0.28 0.08 200));
+  border-radius: 16px 16px 0 0;
+}
+
+.dark .wn-hdr {
+  background: linear-gradient(135deg, oklch(0.18 0.06 175), oklch(0.22 0.08 200));
+}
+
+.wn-hdr-inner { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+
+.wn-label {
+  font-size: 0.64rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: oklch(0.75 0.10 175);
+}
+
+.wn-title {
+  font-size: 1.1rem;
+  font-weight: 900;
+  letter-spacing: -0.3px;
+  color: oklch(0.97 0.005 70);
+  margin: 0;
+}
+
+.wn-tagline {
+  font-size: 0.74rem;
+  color: oklch(0.80 0.04 175);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.wn-hdr .detail-x { color: oklch(0.70 0.04 175); margin-top: 2px; flex-shrink: 0; }
+.wn-hdr .detail-x:hover { color: oklch(0.97 0.005 70); background: oklch(1 0 0 / 0.10); }
+
+.wn-list {
+  list-style: none;
+  margin: 0;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wn-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  line-height: 1.45;
+}
+
+.wn-list li::before {
+  content: "✦";
+  color: var(--accent);
+  font-size: 0.65rem;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.wn-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 16px;
+}
+
 /* ── Backup Center Modal ─────────────────────────────────────────── */
 
 .bkp-modal {

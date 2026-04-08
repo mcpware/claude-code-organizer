@@ -140,9 +140,69 @@ async function init() {
   }
 }
 
+// ── What's New changelog ─────────────────────────────────────────
+// Add a new entry here for every release that has user-facing changes.
+// Key = version string (must match package.json exactly).
+const CHANGELOG = {
+  "0.18.0": {
+    title: "Backup Center",
+    tagline: "Never lose your Claude setup again.",
+    changes: [
+      "☁ Backup Center: back up every memory, skill, MCP config, rule, plan, agent, and session to a private GitHub repo — one click.",
+      "Auto-backup via systemd timer (every 4 hours + on boot). Persistent across reboots.",
+      "Full git history for every backup. See exactly what changed, restore anytime.",
+      "Sync Now, Configure Remote, interval control, and Snapshot Export — all inside the panel.",
+    ],
+  },
+  "0.17.0": {
+    title: "Session Distiller + Image Trimmer",
+    tagline: "Reclaim your context window.",
+    changes: [
+      "Session Distiller compresses bloated sessions to ~10% of their original size while keeping every word of conversation.",
+      "Image Trimmer removes base64 screenshots that trigger 'image exceeds dimension limit' warnings.",
+      "Both tools run from the dashboard or CLI.",
+    ],
+  },
+};
+
+function checkWhatsNew(currentVersion) {
+  if (!currentVersion) return;
+  const lastSeen = localStorage.getItem("cco-last-seen-version");
+  if (lastSeen === currentVersion) return;
+
+  const entry = CHANGELOG[currentVersion];
+  if (!entry) {
+    // New version without a changelog entry — mark as seen silently
+    localStorage.setItem("cco-last-seen-version", currentVersion);
+    return;
+  }
+
+  // Populate and show the modal
+  document.getElementById("wnTitle").textContent = entry.title;
+  document.getElementById("wnTagline").textContent = entry.tagline;
+  const list = document.getElementById("wnList");
+  list.innerHTML = entry.changes.map(c => `<li>${c}</li>`).join("");
+  document.getElementById("whatsNewModal").classList.remove("hidden");
+
+  function dismiss() {
+    localStorage.setItem("cco-last-seen-version", currentVersion);
+    document.getElementById("whatsNewModal").classList.add("hidden");
+  }
+
+  document.getElementById("wnClose").onclick = dismiss;
+  document.getElementById("wnGotIt").onclick = dismiss;
+  document.getElementById("whatsNewModal").onclick = (e) => {
+    if (e.target === document.getElementById("whatsNewModal")) dismiss();
+  };
+}
+
 async function checkForUpdate() {
   try {
-    const { updateAvailable } = await fetchJson("/api/version");
+    const { local, updateAvailable } = await fetchJson("/api/version");
+
+    // Show What's New if this is a version the user hasn't seen yet
+    checkWhatsNew(local);
+
     if (!updateAvailable) return;
     const footer = document.querySelector(".sidebar-footer");
     if (!footer) return;
