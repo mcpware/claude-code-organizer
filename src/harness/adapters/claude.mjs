@@ -11,6 +11,7 @@ import { join, basename } from "node:path";
 import { homedir, platform } from "node:os";
 import { EFFECTIVE_RULES } from "../../effective.mjs";
 import { scanHarness } from "../scanner-framework.mjs";
+import { claudeOperations } from "./claude-operations.mjs";
 
 let HOME = homedir();
 let RUNTIME_PLATFORM = platform();
@@ -1421,6 +1422,7 @@ export const claudeAdapter = {
     };
   },
   effective: effectiveModel,
+  operations: claudeOperations,
 };
 
 export const adapter = claudeAdapter;
