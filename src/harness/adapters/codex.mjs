@@ -64,8 +64,8 @@ const categories = [
     icon: "⚙️",
     order: 10,
     group: "config",
-    source: "~/.codex/config.toml",
-    preview: "TOML file",
+    source: "~/.codex/config.toml, AGENTS.md, and project .codex config",
+    preview: "config file",
   }),
   defineCategory({
     id: "memory",
@@ -145,6 +145,7 @@ const categories = [
 
 const scopeTypes = [
   { id: "global", label: "Global", icon: "🌐", isGlobal: true },
+  { id: "project", label: "Project", icon: "📂", isGlobal: false },
 ];
 
 const capabilities = {
@@ -157,8 +158,16 @@ const capabilities = {
   backup: false,
 };
 
+function projectScopeId(projectPath) {
+  return `project:${Buffer.from(projectPath, "utf-8").toString("base64url")}`;
+}
+
+function projectScopeName(projectPath) {
+  return basename(projectPath) || projectPath;
+}
+
 async function discoverScopes(ctx) {
-  return [{
+  const scopes = [{
     id: "global",
     name: "Global",
     type: "global",
@@ -167,6 +176,27 @@ async function discoverScopes(ctx) {
     repoDir: null,
     configDir: codexDir(ctx),
   }];
+
+  const parsed = await readCodexConfig(ctx);
+  const projects = objectEntries(parsed.config?.projects)
+    .filter(([projectPath, projectConfig]) => projectPath && projectConfig && typeof projectConfig === "object")
+    .sort(([a], [b]) => a.localeCompare(b));
+
+  for (const [projectPath, projectConfig] of projects) {
+    scopes.push({
+      id: projectScopeId(projectPath),
+      name: projectScopeName(projectPath),
+      type: "project",
+      tag: projectConfig.trust_level || "project",
+      parentId: "global",
+      repoDir: projectPath,
+      configDir: join(projectPath, ".codex"),
+      trustLevel: projectConfig.trust_level || "",
+      codexProjectConfig: projectConfig,
+    });
+  }
+
+  return scopes;
 }
 
 async function readCodexConfig(ctx) {
@@ -297,8 +327,77 @@ function configDescription(config) {
   return parts.join(", ") || "Codex CLI configuration";
 }
 
+function projectConfigDescription(scope) {
+  const trust = scope.trustLevel ? `trust: ${scope.trustLevel}` : "project scope";
+  return `${trust} (${scope.repoDir})`;
+}
+
+async function scanProjectLocalConfigs(scope, ctx) {
+  const items = [];
+  if (!scope.repoDir) return items;
+
+  const candidates = [
+    { name: "AGENTS.md", path: join(scope.repoDir, "AGENTS.md"), desc: "Project instructions" },
+  ];
+
+  const localCodexDir = join(scope.repoDir, ".codex");
+  if (localCodexDir !== codexDir(ctx)) {
+    for (const fileName of ["AGENTS.md", "config.toml", "config.local.toml", "settings.json", "settings.local.json"]) {
+      candidates.push({
+        name: `.codex/${fileName}`,
+        path: join(localCodexDir, fileName),
+        desc: "Project Codex config",
+      });
+    }
+  }
+
+  for (const candidate of candidates) {
+    const stat = await safeStat(candidate.path);
+    if (!stat) continue;
+    const content = await safeReadFile(candidate.path);
+    items.push({
+      category: "config",
+      scopeId: scope.id,
+      name: candidate.name,
+      fileName: basename(candidate.path),
+      description: markdownDescription(content) || candidate.desc,
+      subType: candidate.name.endsWith(".md") ? "instructions" : "project-config",
+      ...statFields(stat),
+      path: candidate.path,
+      valueType: extname(candidate.path).replace(/^\./, "") || "file",
+    });
+  }
+
+  return items;
+}
+
 async function scanConfig(scope, ctx) {
   const parsed = await readCodexConfig(ctx);
+  if (scope.id !== "global") {
+    const items = [];
+
+    if (parsed.content && scope.codexProjectConfig) {
+      const cfgBytes = JSON.stringify(scope.codexProjectConfig).length;
+      items.push({
+        category: "config",
+        scopeId: scope.id,
+        name: "config.toml project entry",
+        fileName: "config.toml",
+        description: projectConfigDescription(scope),
+        subType: "project-trust",
+        size: formatSize(cfgBytes),
+        sizeBytes: cfgBytes,
+        ...timestampFields(parsed.stat),
+        path: parsed.path,
+        value: scope.codexProjectConfig,
+        valueType: "toml-table",
+      });
+    }
+
+    items.push(...await scanProjectLocalConfigs(scope, ctx));
+    return items;
+  }
+
   if (!parsed.content) return [];
 
   return [{
@@ -332,6 +431,8 @@ function markdownDescription(content) {
 }
 
 async function scanMemories(scope, ctx) {
+  if (scope.id !== "global") return [];
+
   const dir = join(codexDir(ctx), "memories");
   const items = [];
   if (!(await exists(dir))) return items;
@@ -419,6 +520,8 @@ async function directorySummary(dir) {
 }
 
 async function scanSkills(scope, ctx) {
+  if (scope.id !== "global") return [];
+
   const root = join(codexDir(ctx), "skills");
   const items = [];
   const skillDirs = await findSkillDirs(root);
@@ -451,6 +554,8 @@ function mcpDescription(config) {
 }
 
 async function scanMcpServers(scope, ctx) {
+  if (scope.id !== "global") return [];
+
   const parsed = await readCodexConfig(ctx);
   const servers = parsed.config?.mcp_servers || parsed.config?.mcpServers || {};
   const items = [];
@@ -486,6 +591,8 @@ function profileDescription(profile) {
 }
 
 async function scanProfiles(scope, ctx) {
+  if (scope.id !== "global") return [];
+
   const parsed = await readCodexConfig(ctx);
   const profiles = parsed.config?.profiles || {};
   const items = [];
@@ -513,6 +620,8 @@ async function scanProfiles(scope, ctx) {
 }
 
 async function scanRules(scope, ctx) {
+  if (scope.id !== "global") return [];
+
   const dir = join(codexDir(ctx), "rules");
   const items = [];
   if (!(await exists(dir))) return items;
@@ -564,6 +673,8 @@ async function findPluginManifests(root, current = root, depth = 0) {
 }
 
 async function scanPlugins(scope, ctx) {
+  if (scope.id !== "global") return [];
+
   const root = join(codexDir(ctx), "plugins");
   const items = [];
   const manifests = await findPluginManifests(root);
