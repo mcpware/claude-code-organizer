@@ -10,11 +10,19 @@ import { join, extname, resolve, sep, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import { createRequire } from "node:module";
 import https from "node:https";
-import { scan, scanMcpPolicy, checkMcpPolicy, getDisabledMcpServers, setDisabledMcpServers } from "./scanner.mjs";
+import {
+  scan,
+  scanMcpPolicy,
+  checkMcpPolicy,
+  getDisabledMcpServers,
+  setDisabledMcpServers,
+} from "./scanner.mjs";
 import { moveItem, deleteItem, getValidDestinations } from "./mover.mjs";
 import { introspectServers } from "./mcp-introspector.mjs";
 import { runSecurityScan, checkClaudeAvailable, llmJudge, detectMcpDuplicates } from "./security-scanner.mjs";
 import { computeClaudeContextBudget } from "./harness/adapters/claude-context-budget.mjs";
+import { getAdapter, getDefaultAdapterId, listAdapters } from "./harness/registry.mjs";
+import { scanHarness as runHarnessScan } from "./harness/scanner-framework.mjs";
 
 // ── Update check ─────────────────────────────────────────────────────
 async function checkForUpdate() {
@@ -66,11 +74,35 @@ const MIME = {
 };
 
 // ── Cached scan data (refresh on each request to /api/scan) ──────────
-let cachedData = null;
+const cachedDataByHarness = new Map();
 
-async function freshScan() {
-  cachedData = await scan();
-  return cachedData;
+function requestHarnessId(url) {
+  return url.searchParams.get("harness") || getDefaultAdapterId();
+}
+
+async function scanForCache(harnessId) {
+  if (harnessId === getDefaultAdapterId()) return scan();
+  const adapter = await getAdapter(harnessId);
+  return runHarnessScan(adapter);
+}
+
+async function refreshScanCache(harnessId = getDefaultAdapterId()) {
+  const data = await scanForCache(harnessId);
+  cachedDataByHarness.set(harnessId, data);
+  return data;
+}
+
+function getCachedData(harnessId = getDefaultAdapterId()) {
+  return cachedDataByHarness.get(harnessId) || null;
+}
+
+function invalidateCachedData(harnessId = getDefaultAdapterId()) {
+  cachedDataByHarness.delete(harnessId);
+}
+
+async function getHarnessOperations(harnessId = getDefaultAdapterId()) {
+  const adapter = await getAdapter(harnessId);
+  return adapter.operations || { moveItem, deleteItem, getValidDestinations };
 }
 
 // ── Request helpers ──────────────────────────────────────────────────
@@ -107,8 +139,41 @@ async function serveFile(res, filePath) {
 async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const path = url.pathname;
+  const harnessId = requestHarnessId(url);
+  let cachedData = getCachedData(harnessId);
+  async function freshScan() {
+    cachedData = await refreshScanCache(harnessId);
+    return cachedData;
+  }
 
   // ── API routes ──
+
+  // GET /api/harnesses — list registered harness adapters and metadata
+  if (path === "/api/harnesses" && req.method === "GET") {
+    const summaries = await listAdapters();
+    const harnesses = await Promise.all(summaries.map(async ({ id }) => {
+      const adapter = await getAdapter(id);
+      return {
+        id: adapter.id,
+        displayName: adapter.displayName,
+        shortName: adapter.shortName,
+        icon: adapter.icon,
+        executable: adapter.executable,
+        categories: adapter.categories,
+        scopeTypes: adapter.scopeTypes,
+        capabilities: adapter.capabilities,
+      };
+    }));
+    return json(res, { ok: true, defaultHarness: getDefaultAdapterId(), harnesses });
+  }
+
+  if (path.startsWith("/api/") && path !== "/api/version") {
+    try {
+      await getAdapter(harnessId);
+    } catch (err) {
+      return json(res, { ok: false, error: err.message }, 400);
+    }
+  }
 
   // GET /api/version — check for updates (UI calls this)
   if (path === "/api/version" && req.method === "GET") {
@@ -200,7 +265,8 @@ async function handleRequest(req, res) {
     );
     if (!item) return json(res, { ok: false, error: "Item not found or locked" }, 400);
 
-    const result = await moveItem(item, toScopeId, cachedData.scopes);
+    const operations = await getHarnessOperations(harnessId);
+    const result = await operations.moveItem(item, toScopeId, cachedData.scopes);
 
     // Refresh cache after move
     if (result.ok) await freshScan();
@@ -222,7 +288,8 @@ async function handleRequest(req, res) {
     );
     if (!item) return json(res, { ok: false, error: "Item not found or locked" }, 400);
 
-    const result = await deleteItem(item, cachedData.scopes);
+    const operations = await getHarnessOperations(harnessId);
+    const result = await operations.deleteItem(item, cachedData.scopes);
 
     if (result.ok) await freshScan();
 
@@ -243,7 +310,8 @@ async function handleRequest(req, res) {
     );
     if (!item) return json(res, { ok: false, error: "Item not found" }, 400);
 
-    const destinations = getValidDestinations(item, cachedData.scopes);
+    const operations = await getHarnessOperations(harnessId);
+    const destinations = operations.getValidDestinations(item, cachedData.scopes);
     return json(res, { ok: true, destinations, currentScopeId: item.scopeId });
   }
 
@@ -323,6 +391,7 @@ async function handleRequest(req, res) {
       }
       const { writeFile: wf } = await import("node:fs/promises");
       await wf(filePath, content, "utf-8");
+      invalidateCachedData(harnessId);
       cachedData = null;
       return json(res, { ok: true });
     } catch (err) {
@@ -489,7 +558,8 @@ async function handleRequest(req, res) {
     try {
       const { distillSession } = await import("./session-distiller.mjs");
       const result = await distillSession(filePath);
-      cachedData = null; // bust scan cache so new session appears
+      invalidateCachedData(harnessId); // bust scan cache so new session appears
+      cachedData = null;
       return json(res, {
         ok: true,
         distilled: result.outputPath,
@@ -778,6 +848,7 @@ async function handleRequest(req, res) {
       }
 
       await setDisabledMcpServers(project, updated);
+      invalidateCachedData(harnessId);
       cachedData = null;
       return json(res, { ok: true, disabled: updated });
     } catch (err) {
@@ -833,7 +904,8 @@ async function handleRequest(req, res) {
 
       const { writeFile: writeFileFs } = await import("node:fs/promises");
       await writeFileFs(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-      cachedData = null; // invalidate cache
+      invalidateCachedData(harnessId); // invalidate cache
+      cachedData = null;
       return json(res, { ok: true });
     } catch (err) {
       return json(res, { ok: false, error: err.message }, 500);
