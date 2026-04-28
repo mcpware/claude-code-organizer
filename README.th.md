@@ -1,25 +1,33 @@
 # Cross-Code Organizer (CCO)
 
+### เดิมชื่อ Claude Code Organizer — cross-harness config organizer ตัวแรกสำหรับ AI coding tools
+
 [![npm version](https://img.shields.io/npm/v/@mcpware/cross-code-organizer)](https://www.npmjs.com/package/@mcpware/cross-code-organizer)
 [![npm downloads](https://img.shields.io/npm/dt/@mcpware/cross-code-organizer?label=downloads)](https://www.npmjs.com/package/@mcpware/cross-code-organizer)
 [![GitHub stars](https://img.shields.io/github/stars/mcpware/cross-code-organizer)](https://github.com/mcpware/cross-code-organizer/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/mcpware/cross-code-organizer)](https://github.com/mcpware/cross-code-organizer/network/members)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-138%20passing-brightgreen)](https://github.com/mcpware/cross-code-organizer)
+[![Tests](https://img.shields.io/badge/tests-314%20passing-brightgreen)](https://github.com/mcpware/cross-code-organizer)
 [![Zero Telemetry](https://img.shields.io/badge/telemetry-zero-blue)](https://github.com/mcpware/cross-code-organizer)
 [![MCP Security](https://img.shields.io/badge/MCP-Security%20Scanner-red)](https://github.com/mcpware/cross-code-organizer)
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [廣東話](README.zh-HK.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md) | ไทย
 
-**Cross-Code Organizer (CCO)** ตอนนี้คือ universal AI coding tool config manager: dashboard เดียวจัดการ config ของ Claude Code และ Codex CLI — MCP server, skills, sessions, profiles, runtime และไฟล์ project. Sidebar มี harness selector ให้สลับ tool ได้ทันที
+**Cross-Code Organizer (CCO)** คือ cross-harness config organizer ตัวแรกสำหรับ AI coding tools. dashboard เดียวจัดการ Claude Code, Codex CLI และ harness อื่นที่จะ plug in ต่อไป สลับผ่าน harness selector ใน sidebar ดู config ข้าม harness และจัดระเบียบทุกอย่างจากที่เดียว
+
+CCO ให้ visibility ข้าม harness: Claude Code มี memories, skills, agents, hooks และ context budget tracking ส่วน Codex CLI มี profiles, sessions, shell snapshots และ TOML config. CCO scan ทุก harness, แสดง side by side, ช่วย move config, run MCP security scan, backup harness state และล้างของซ้ำข้ามขอบเขต harness. เพิ่ม harness ใหม่ใช้ adapter file แค่ไฟล์เดียว
+
+Rename alias สำหรับการค้นหา: project นี้เคยชื่อ **Claude Code Organizer** / `claude-code-organizer`. ชื่อปัจจุบันคือ **Cross Code Organizer** / `cross-code-organizer`. คำว่า Claude Code, Codex CLI และ MCP ถูกเก็บไว้เป็น legacy/search terms สำหรับคนที่หา config organizer; install และ repo link ยังใช้ `cross-code-organizer` ปัจจุบัน
 
 > **v0.19.0:** Codex CLI เป็น supported harness ตัวที่สองแล้ว ต่อไปจะเพิ่ม Cursor, Windsurf และ Aider
+
+> **v0.19.3:** Preview ของ skills / memories / agents เปลี่ยนเป็น markdown-backed preview และ fallback อย่างปลอดภัยถ้า markdown renderer พัง. Claude project discovery รองรับ path non-ASCII / lossy encoded และ symlinked directory. Skills ที่มาจาก Claude plugin ก็ถูก scan ใน user / project scope แล้ว
 
 > **เรื่อง privacy:** CCO อ่านเฉพาะ config ของ harness ที่เลือก (`~/.claude/`, `~/.codex/` และ config ระดับ project) ไม่ส่ง usage telemetry
 
 ![Cross-Code Organizer (CCO) Demo](docs/demo.gif)
 
-<sub>138 E2E tests | Zero dependencies | Demo อัดด้วย AI ผ่าน [Pagecast](https://github.com/mcpware/pagecast)</sub>
+<sub>314 tests (113 unit + 201 E2E) | Zero telemetry | Demo อัดด้วย AI ผ่าน [Pagecast](https://github.com/mcpware/pagecast)</sub>
 
 > 100+ ดาวใน 5 วัน ผมเรียน CS อยู่แล้วออกกลางคัน วันนึงไปเจอว่ามี config file มองไม่เห็น 140+ ไฟล์แอบคุม Claude อยู่เบื้องหลัง ไม่มีใครควรต้องมานั่ง `cat` ทีละไฟล์ เลยทำ tool นี้ขึ้นมา เป็น open source ตัวแรก — ขอบคุณทุกคนที่กดดาว ทดสอบ แจ้ง issue
 
@@ -73,11 +81,11 @@ Run npx @mcpware/cross-code-organizer and tell me the URL when it's ready.
 
 ## Cross-Harness: Claude Code + Codex CLI
 
-CCO เริ่มจากการเป็น organizer ของ Claude Code ตั้งแต่ v0.19.0 เป็นต้นไปมันคือ cross-harness dashboard
+CCO เริ่มจากการเป็น Claude Code Organizer ตอนนี้คือ Cross-Code Organizer สำหรับ Claude Code และ Codex CLI ใน dashboard เดียว
 
-ใช้ **Harness** selector ใน sidebar เพื่อสลับระหว่าง Claude Code กับ Codex CLI แต่ละ harness มี path, category และ rule ของตัวเอง: Claude Code จัดการ memories, skills, MCP, commands, agents, hooks; Codex CLI จัดการ `~/.codex` config, ไฟล์ AGENTS, skills, MCP servers, profiles, sessions, history, shell snapshots และ runtime
+ใช้ **Harness** selector ใน sidebar เพื่อสลับระหว่าง Claude Code กับ Codex CLI แต่ละ harness มี path, category, rule และ capability ของตัวเอง: Claude Code มี Show Effective, Context Budget, MCP Controls, sessions, backups และ security scanning; Codex CLI มี `~/.codex` config, ไฟล์ AGENTS, skills, MCP servers, profiles, sessions, history, shell snapshots, runtime, backups และ security scanning
 
-ตัวถัดไปใน roadmap คือ Cursor, Windsurf และ Aider
+เป้าหมายไม่ใช่ settings viewer ของ tool เดียวอีกตัว CCO กำลังเป็น universal AI coding tool config manager ตัวถัดไปใน roadmap คือ Cursor, Windsurf และ Aider
 
 ## รู้ว่าอะไรกิน Context
 
@@ -150,8 +158,9 @@ CCO ต่อเข้า MCP server ทุกตัว ดึง tool definitio
 ## ทำงานยังไง
 
 1. **สแกน harness ที่เลือก** — Claude Code ใช้ `~/.claude/`, Codex CLI ใช้ `~/.codex/` และ trusted project config
-2. **Map project scope** — อ่าน project จาก filesystem path แล้ว map เข้ากับ Global/Project model ของ harness ที่เลือก
-3. **เรนเดอร์ dashboard** — scope list, category items, detail panel พร้อม content preview
+2. **Map project scope** — อ่าน project จาก filesystem path รวมถึง path non-ASCII / lossy encoded และ symlinked directory แล้ว map เข้ากับ Global/Project model ของ harness ที่เลือก
+3. **สร้าง preview** — skills, memories และ agents ใช้ markdown-backed preview พร้อม fallback เป็น plain preview อย่างปลอดภัยถ้า renderer พัง
+4. **เรนเดอร์ dashboard** — scope list, category items, detail panel พร้อม content preview
 
 ## รองรับ Platform
 

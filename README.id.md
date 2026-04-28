@@ -1,25 +1,33 @@
 # Cross-Code Organizer (CCO)
 
+### Dulu Claude Code Organizer — cross-harness config organizer pertama buat AI coding tools.
+
 [![npm version](https://img.shields.io/npm/v/@mcpware/cross-code-organizer)](https://www.npmjs.com/package/@mcpware/cross-code-organizer)
 [![npm downloads](https://img.shields.io/npm/dt/@mcpware/cross-code-organizer?label=downloads)](https://www.npmjs.com/package/@mcpware/cross-code-organizer)
 [![GitHub stars](https://img.shields.io/github/stars/mcpware/cross-code-organizer)](https://github.com/mcpware/cross-code-organizer/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/mcpware/cross-code-organizer)](https://github.com/mcpware/cross-code-organizer/network/members)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-138%20passing-brightgreen)](https://github.com/mcpware/cross-code-organizer)
+[![Tests](https://img.shields.io/badge/tests-314%20passing-brightgreen)](https://github.com/mcpware/cross-code-organizer)
 [![Zero Telemetry](https://img.shields.io/badge/telemetry-zero-blue)](https://github.com/mcpware/cross-code-organizer)
 [![MCP Security](https://img.shields.io/badge/MCP-Security%20Scanner-red)](https://github.com/mcpware/cross-code-organizer)
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [廣東話](README.zh-HK.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | Bahasa Indonesia | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md) | [ไทย](README.th.md)
 
-**Cross-Code Organizer (CCO)** sekarang jadi universal AI coding tool config manager: satu dashboard buat ngatur config Claude Code dan Codex CLI — MCP server, skills, sessions, profiles, runtime, dan file project. Di sidebar ada harness selector buat switch antar tool.
+**Cross-Code Organizer (CCO)** adalah cross-harness config organizer pertama buat AI coding tools. Satu dashboard buat Claude Code, Codex CLI, dan harness lain yang nanti kamu plug in. Switch lewat harness selector di sidebar, lihat config lintas harness, dan rapihin semuanya dari satu tempat.
+
+CCO kasih visibility lintas harness. Claude Code punya memories, skills, agents, hooks, dan context budget tracking. Codex CLI punya profiles, sessions, shell snapshots, dan TOML config. CCO scan semua harness, nampilin side by side, lalu bantu kamu move config, jalanin MCP security scan, backup state harness, dan bersihin duplikat lintas batas harness. Nambah harness baru cukup satu adapter file.
+
+Rename alias buat search: project ini dulu dikenal sebagai **Claude Code Organizer** / `claude-code-organizer`. Nama sekarang adalah **Cross Code Organizer** / `cross-code-organizer`. Istilah Claude Code, Codex CLI, dan MCP di sini dipertahankan sebagai legacy/search terms buat yang nyari config organizer; install dan repo link tetap pakai `cross-code-organizer` yang sekarang.
 
 > **v0.19.0:** Codex CLI sekarang jadi supported harness kedua. Cursor, Windsurf, dan Aider masuk roadmap berikutnya.
+
+> **v0.19.3:** Preview skills / memories / agents sekarang markdown-backed dan fallback aman kalau markdown renderer gagal. Claude project discovery sekarang handle path non-ASCII / lossy encoded dan symlinked directory. Skills dari Claude plugin juga ikut discan di user / project scope.
 
 > **Privasi:** CCO cuma baca config dari harness yang dipilih (`~/.claude/`, `~/.codex/`, dan config project). Nggak kirim usage telemetry.
 
 ![Cross-Code Organizer (CCO) Demo](docs/demo.gif)
 
-<sub>138 E2E tests | Zero dependencies | Demo direkam AI pake [Pagecast](https://github.com/mcpware/pagecast)</sub>
+<sub>314 tests (113 unit + 201 E2E) | Zero telemetry | Demo direkam AI pake [Pagecast](https://github.com/mcpware/pagecast)</sub>
 
 > 100+ stars dalam 5 hari. Dibuat sama CS dropout yang nemu 140 file config invisible yang ngontrol Claude, dan mikir "masa harus `cat` satu-satu?" Project open source pertama — makasih buat yang udah star, test, dan report bug.
 
@@ -73,11 +81,11 @@ Atau run langsung: `npx @mcpware/cross-code-organizer`
 
 ## Cross-Harness: Claude Code + Codex CLI
 
-CCO awalnya Claude Code organizer. Mulai v0.19.0, CCO jadi dashboard cross-harness.
+CCO awalnya Claude Code Organizer. Sekarang CCO jadi Cross-Code Organizer buat Claude Code dan Codex CLI dalam satu dashboard.
 
-Pakai selector **Harness** di sidebar buat switch antara Claude Code dan Codex CLI. Tiap harness tetap punya path, kategori, dan rule sendiri: Claude Code ngatur memories, skills, MCP, commands, agents, hooks; Codex CLI ngatur `~/.codex` config, file AGENTS, skills, MCP servers, profiles, sessions, history, shell snapshots, dan runtime.
+Pakai selector **Harness** di sidebar buat switch antara Claude Code dan Codex CLI. Tiap harness tetap punya path, kategori, rule, dan capability sendiri: Claude Code punya Show Effective, Context Budget, MCP Controls, sessions, backups, dan security scanning; Codex CLI punya `~/.codex` config, file AGENTS, skills, MCP servers, profiles, sessions, history, shell snapshots, runtime, backups, dan security scanning.
 
-Berikutnya akan ada Cursor, Windsurf, dan Aider.
+Targetnya bukan sekadar settings viewer buat satu tool. CCO lagi bergerak jadi universal AI coding tool config manager. Berikutnya akan ada Cursor, Windsurf, dan Aider.
 
 ## Tau Apa yang Makan Context Kamu
 
@@ -149,8 +157,9 @@ CCO connect ke tiap MCP server, ambil definisi tool yang beneran, terus scan pak
 ## Cara Kerjanya
 
 1. **Scan harness yang dipilih** — `~/.claude/` buat Claude Code, `~/.codex/` plus config project trusted buat Codex CLI
-2. **Resolve scope project** — scan project dari path filesystem dan mapping ke model Global/Project harness yang dipilih
-3. **Render dashboard** — scope list, item per kategori, detail panel dengan preview konten
+2. **Resolve scope project** — cari project dari path filesystem, termasuk path non-ASCII / lossy encoded dan symlinked directory, lalu mapping ke model Global/Project harness yang dipilih
+3. **Generate preview** — skills, memories, dan agents pakai markdown-backed preview, dengan fallback aman ke plain preview kalau renderer gagal
+4. **Render dashboard** — scope list, item per kategori, detail panel dengan preview konten
 
 ## Platform Support
 
