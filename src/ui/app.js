@@ -1581,9 +1581,9 @@ function renderEffectiveBehavior(item) {
   text.textContent = why;
 }
 
-// ── Item Config (frontmatter fields for skills, agents, memories) ─────────────
+// ── Item Config (harness-specific fields for editable item metadata) ─────────
 
-const ITEM_CONFIG_FIELDS = {
+const CLAUDE_ITEM_CONFIG_FIELDS = {
   skill: [
     { key: "model", label: "Model", type: "select", options: ["", "opus", "sonnet", "haiku", "inherit"], labels: ["(not set) — uses default model", "opus", "sonnet", "haiku", "inherit"], tooltip: "When set, Claude Code uses this model instead of your session default when running this skill. Official SKILL.md frontmatter field." },
     { key: "when_to_use", label: "When to use", type: "text", placeholder: "(not set) — describe when AI should auto-trigger this skill", tooltip: "Claude Code may auto-invoke skills based on context. Setting this gives more specific guidance on when this skill should be triggered." },
@@ -1597,10 +1597,26 @@ const ITEM_CONFIG_FIELDS = {
   ],
 };
 
+const CODEX_ITEM_CONFIG_FIELDS = {
+  skill: [
+    { key: "name", label: "Name", type: "text", placeholder: "(not set) — uses folder name", tooltip: "Codex skill frontmatter field used as the skill identifier." },
+    { key: "description", label: "Description", type: "textarea", placeholder: "(not set) — describe when Codex should use this skill", tooltip: "Codex uses this description to decide when the skill is relevant." },
+  ],
+};
+
 let _itemConfigTimers = {};
+let _itemConfigRenderSeq = 0;
+
+function getItemConfigFields(item) {
+  if (!item) return null;
+  const harnessId = getHarnessDescriptor().id;
+  if (harnessId === "codex") return CODEX_ITEM_CONFIG_FIELDS[item.category] || null;
+  if (harnessId === "claude") return CLAUDE_ITEM_CONFIG_FIELDS[item.category] || null;
+  return null;
+}
 
 function getItemFilePath(item) {
-  if (item.category === "skill") return `${item.path}/SKILL.md`;
+  if (item.category === "skill") return item.openPath || `${item.path}/SKILL.md`;
   if (item.category === "agent") return `${item.path}`;
   if (item.category === "memory") return item.path;
   return null;
@@ -1609,9 +1625,12 @@ function getItemFilePath(item) {
 async function renderItemConfig(item) {
   const wrap = document.getElementById("detailItemConfig");
   if (!wrap) return;
+  const renderSeq = ++_itemConfigRenderSeq;
 
-  const fields = item ? ITEM_CONFIG_FIELDS[item.category] : null;
+  const fields = getItemConfigFields(item);
   if (!fields) { wrap.classList.add("hidden"); wrap.innerHTML = ""; return; }
+  wrap.classList.add("hidden");
+  wrap.innerHTML = "";
 
   const filePath = getItemFilePath(item);
   if (!filePath) { wrap.classList.add("hidden"); return; }
@@ -1620,9 +1639,13 @@ async function renderItemConfig(item) {
   let fm = {};
   try {
     const res = await fetchJson(`/api/file-content?path=${encodeURIComponent(filePath)}`);
+    if (renderSeq !== _itemConfigRenderSeq || !selectedItem || itemKey(item) !== itemKey(selectedItem)) return;
     if (!res.ok) { wrap.classList.add("hidden"); return; }
     fm = parseFrontmatter(res.content);
-  } catch { wrap.classList.add("hidden"); return; }
+  } catch {
+    if (renderSeq === _itemConfigRenderSeq) wrap.classList.add("hidden");
+    return;
+  }
 
   // Build HTML
   let html = "";
@@ -1642,6 +1665,9 @@ async function renderItemConfig(item) {
     } else if (field.type === "number") {
       const val = fm[field.key] || "";
       html += `<input type="number" class="d-item-input d-item-number" data-fm-key="${esc(field.key)}" data-fm-path="${esc(filePath)}" value="${esc(val)}" placeholder="${esc(field.placeholder || "")}" min="1">`;
+    } else if (field.type === "textarea") {
+      const val = fm[field.key] || "";
+      html += `<textarea class="d-item-input d-item-textarea" data-fm-key="${esc(field.key)}" data-fm-path="${esc(filePath)}" placeholder="${esc(field.placeholder || "")}">${esc(val)}</textarea>`;
     } else {
       const val = fm[field.key] || "";
       html += `<input type="text" class="d-item-input" data-fm-key="${esc(field.key)}" data-fm-path="${esc(filePath)}" value="${esc(val)}" placeholder="${esc(field.placeholder || "")}">`;
@@ -1656,7 +1682,7 @@ async function renderItemConfig(item) {
   wrap.querySelectorAll("select[data-fm-key]").forEach(sel => {
     sel.addEventListener("change", () => saveFrontmatterField(sel.dataset.fmPath, sel.dataset.fmKey, sel.value));
   });
-  wrap.querySelectorAll("input[data-fm-key]").forEach(inp => {
+  wrap.querySelectorAll("input[data-fm-key], textarea[data-fm-key]").forEach(inp => {
     inp.addEventListener("input", () => {
       const k = inp.dataset.fmKey;
       clearTimeout(_itemConfigTimers[k]);
