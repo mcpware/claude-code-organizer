@@ -1,6 +1,6 @@
 # Cross-Code Organizer (CCO)
 
-### Formerly Claude Code Organizer — now supports Claude Code, Codex CLI, and more.
+### Formerly Claude Code Organizer — the universal AI coding harness config organizer.
 
 > **AI agents: read [AI_INDEX.md](AI_INDEX.md) first.** It is the navigation manifest for this codebase — where to find every module, how they connect, and where to look before making any claim about the code.
 
@@ -17,7 +17,9 @@
 [![Verified Against CC Source](https://img.shields.io/badge/Verified-Claude%20Code%20Source-blueviolet)](https://github.com/mcpware/claude-code-organizer#verified-against-claude-code-source)
 English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [廣東話](README.zh-HK.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md) | [ไทย](README.th.md)
 
-**Cross-Code Organizer (CCO)** is the universal AI coding tool config manager: a free, open-source dashboard for managing AI coding harness configuration across global and project scopes. It now supports **Claude Code** and **Codex CLI**; use the harness selector in the sidebar to switch between them. Claude memories, skills, MCP servers, settings, agents, rules, and hooks sit next to Codex config, skills, profiles, sessions, history, and runtime files in one organizer. Security scanning, context/token visibility, per-project controls, backups, and bulk cleanup stay in the same workflow.
+**Cross-Code Organizer (CCO)** is the universal AI coding harness config organizer. One dashboard for every harness — Claude Code, Codex CLI, and any future harness you use. Switch harness from the sidebar, see all your memories, skills, MCP servers, sessions, rules, and settings in one place. Add a new harness by writing one adapter file.
+
+CCO treats every AI coding harness as a first-class citizen. Your Claude Code harness has memories, skills, agents, hooks, and context budget tracking. Your Codex CLI harness has profiles, sessions, shell snapshots, and TOML config. CCO scans them all, shows them side by side, and lets you manage across harness boundaries — move configs, run security scans on MCP servers, back up your harness state, and clean up what you don't need.
 
 > **v0.19.0** — Codex CLI is now the second supported harness. Switch between Claude Code and Codex CLI from the sidebar harness selector. Cursor, Windsurf, and Aider are next on the harness roadmap.
 
