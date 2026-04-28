@@ -134,6 +134,65 @@ async function serveFile(res, filePath) {
   }
 }
 
+function contentText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (typeof part?.text === "string") return part.text;
+      if (typeof part?.input_text === "string") return part.input_text;
+      if (typeof part?.output_text === "string") return part.output_text;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function toolUsesFromContent(content) {
+  if (!Array.isArray(content)) return [];
+  return content
+    .filter((part) => part?.type === "tool_use" || part?.type === "function_call")
+    .map((part) => ({ name: part.name, id: part.id || part.call_id }))
+    .filter((part) => part.name || part.id);
+}
+
+function sessionMessageFromEntry(entry) {
+  if (entry.message?.role && entry.message?.content) {
+    return {
+      role: entry.message.role,
+      text: contentText(entry.message.content),
+      toolUses: toolUsesFromContent(entry.message.content),
+    };
+  }
+
+  const payload = entry.payload;
+  if (entry.type === "response_item" && payload?.type === "message" && payload.role) {
+    return {
+      role: payload.role,
+      text: contentText(payload.content),
+      toolUses: toolUsesFromContent(payload.content),
+    };
+  }
+
+  return null;
+}
+
+function addModelUsage(models, model, usage) {
+  if (!usage) return;
+  const modelName = model || "unknown";
+  if (!models[modelName]) {
+    models[modelName] = { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, webSearches: 0, turns: 0 };
+  }
+  const target = models[modelName];
+  target.inputTokens += usage.inputTokens || 0;
+  target.outputTokens += usage.outputTokens || 0;
+  target.cacheRead += usage.cacheRead || 0;
+  target.cacheWrite += usage.cacheWrite || 0;
+  target.webSearches += usage.webSearches || 0;
+  target.turns += 1;
+}
+
 // ── Routes ───────────────────────────────────────────────────────────
 
 async function handleRequest(req, res) {
@@ -417,7 +476,11 @@ async function handleRequest(req, res) {
       await fh.read(headBuf, 0, headSize, 0);
       let title = null;
       for (const line of headBuf.toString("utf-8").split("\n").slice(0, 10)) {
-        try { const e = JSON.parse(line); if (e.aiTitle) { title = e.aiTitle; break; } } catch {}
+        try {
+          const e = JSON.parse(line);
+          if (e.aiTitle) { title = e.aiTitle; break; }
+          if (e.type === "session_meta" && e.payload?.cwd) title ||= e.payload.cwd;
+        } catch {}
       }
 
       // Read last 256KB for recent messages (enough for ~20 text messages)
@@ -436,26 +499,14 @@ async function handleRequest(req, res) {
         if (!line.trim()) continue;
         try {
           const entry = JSON.parse(line);
-          if (entry.message?.role && entry.message?.content) {
-            const role = entry.message.role;
-            const content = entry.message.content;
-            const textParts = [];
-            const toolUses = [];
-            if (typeof content === "string") {
-              textParts.push(content);
-            } else if (Array.isArray(content)) {
-              for (const c of content) {
-                if (c.type === "text" && c.text?.trim()) textParts.push(c.text);
-                else if (c.type === "tool_use") toolUses.push({ name: c.name, id: c.id });
-              }
-            }
-            const text = textParts.join("\n");
+          const message = sessionMessageFromEntry(entry);
+          if (message?.role) {
             totalMessages++;
-            if (text.trim()) {
+            if (message.text.trim()) {
               messages.push({
-                role,
-                text: text.length > 800 ? text.slice(0, 800) + "\n… (truncated)" : text,
-                toolUses: toolUses.length ? toolUses : undefined,
+                role: message.role,
+                text: message.text.length > 800 ? message.text.slice(0, 800) + "\n… (truncated)" : message.text,
+                toolUses: message.toolUses.length ? message.toolUses : undefined,
               });
             }
           }
@@ -483,6 +534,9 @@ async function handleRequest(req, res) {
     }
     // pricing per million tokens [input, output, cacheRead, cacheWrite, webSearch per req]
     const PRICING = {
+      "gpt-5.5":                 { i: 5,  o: 25,  cr: 0.5,  cw: 6.25, ws: 0.01 },
+      "gpt-5.4":                 { i: 3,  o: 15,  cr: 0.3,  cw: 3.75, ws: 0.01 },
+      "gpt-5.3-codex":           { i: 3,  o: 15,  cr: 0.3,  cw: 3.75, ws: 0.01 },
       "claude-opus-4-6":       { i: 5,  o: 25,  cr: 0.5,  cw: 6.25, ws: 0.01 },
       "claude-opus-4-5":       { i: 5,  o: 25,  cr: 0.5,  cw: 6.25, ws: 0.01 },
       "claude-opus-4-1":       { i: 15, o: 75,  cr: 1.5,  cw: 18.75, ws: 0.01 },
@@ -498,6 +552,7 @@ async function handleRequest(req, res) {
       const content = await readFile(filePath, "utf-8");
       const models = {};  // { modelName: { inputTokens, outputTokens, cacheRead, cacheWrite, webSearches, turns } }
       let firstTs = null, lastTs = null;
+      let currentModel = null;
 
       for (const line of content.split("\n")) {
         if (!line.trim()) continue;
@@ -508,16 +563,27 @@ async function handleRequest(req, res) {
             if (!firstTs || ts < firstTs) firstTs = ts;
             if (!lastTs || ts > lastTs) lastTs = ts;
           }
+          if (entry.type === "turn_context" && entry.payload?.model) currentModel = entry.payload.model;
+          if (entry.type === "session_meta" && !currentModel) {
+            currentModel = entry.payload?.model || entry.payload?.model_provider || null;
+          }
           if (entry.type === "assistant" && entry.message?.usage && entry.message?.model !== "<synthetic>") {
-            const model = entry.message.model || "unknown";
             const u = entry.message.usage;
-            if (!models[model]) models[model] = { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, webSearches: 0, turns: 0 };
-            models[model].inputTokens += u.input_tokens || 0;
-            models[model].outputTokens += u.output_tokens || 0;
-            models[model].cacheRead += u.cache_read_input_tokens || 0;
-            models[model].cacheWrite += u.cache_creation_input_tokens || 0;
-            models[model].webSearches += (u.server_tool_use?.web_search_requests || 0);
-            models[model].turns++;
+            addModelUsage(models, entry.message.model || currentModel, {
+              inputTokens: u.input_tokens || 0,
+              outputTokens: u.output_tokens || 0,
+              cacheRead: u.cache_read_input_tokens || 0,
+              cacheWrite: u.cache_creation_input_tokens || 0,
+              webSearches: u.server_tool_use?.web_search_requests || 0,
+            });
+          }
+          if (entry.type === "event_msg" && entry.payload?.type === "token_count") {
+            const u = entry.payload.info?.last_token_usage || entry.payload.info?.total_token_usage;
+            addModelUsage(models, currentModel || "codex", {
+              inputTokens: u?.input_tokens || 0,
+              outputTokens: u?.output_tokens || 0,
+              cacheRead: u?.cached_input_tokens || 0,
+            });
           }
         } catch { /* skip malformed */ }
       }

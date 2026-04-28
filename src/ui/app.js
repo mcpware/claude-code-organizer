@@ -1352,7 +1352,7 @@ function renderItem(item) {
     ? `<button type="button" class="act-btn ${isMcpDisabled ? "act-mcp-enable" : "act-mcp-disable"}" data-action="mcp-toggle" data-mcp-name="${esc(item.name)}" title="${isMcpDisabled ? "Re-enable in this project" : "Disable in this project"}">${isMcpDisabled ? "Enable" : "Disable"}</button>`
     : "";
   // Session rows get Resume + Distill instead of Move/Open/Del
-  const sessionActions = item.subType === "session" && hasCapability("sessions") ? `
+  const sessionActions = isSessionTranscript(item) && hasCapability("sessions") ? `
     <span class="item-actions">
       <button type="button" class="act-btn act-resume" data-action="resume" title="Copy resume command">Resume</button>
       <button type="button" class="act-btn act-distill" data-action="distill" title="Distill session (backup + clean)">Distill</button>
@@ -1446,7 +1446,7 @@ function renderDetailPanel(resetPreview = false) {
   title.textContent = selectedItem.name;
 
   // For sessions: replace breadcrumb with cost breakdown button
-  if (selectedItem.category === "session" && selectedItem.path?.endsWith(".jsonl")) {
+  if (isSessionTranscript(selectedItem)) {
     crumb.innerHTML = `<button class="d-btn d-btn-cost" id="crumbCostBtn" type="button">💰 Cost Breakdown</button>`;
     document.getElementById("crumbCostBtn").addEventListener("click", () => showCostBreakdown(selectedItem));
   } else {
@@ -1737,6 +1737,10 @@ function getHarnessShortName() {
 
 function getHarnessExecutable() {
   return getHarnessDescriptor().executable || selectedHarnessId || "harness";
+}
+
+function isSessionTranscript(item) {
+  return item?.category === "session" && item.path?.endsWith(".jsonl") && item.subType !== "session-index";
 }
 
 function getPromptTemplates() {
@@ -2777,7 +2781,7 @@ async function loadPreview(item) {
       return;
     }
 
-    if (item.category === "session") {
+    if (isSessionTranscript(item)) {
       const res = await fetchJson(`/api/session-preview?path=${encodeURIComponent(item.path)}`);
       if (currentKey !== detailPreviewKey) return;
       if (!res.ok) { preview.textContent = "Cannot load session preview"; return; }
