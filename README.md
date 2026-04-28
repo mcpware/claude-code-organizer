@@ -3,16 +3,17 @@
 > **AI agents: read [AI_INDEX.md](AI_INDEX.md) first.** It is the navigation manifest for this codebase — where to find every module, how they connect, and where to look before making any claim about the code.
 
 [![npm version](https://img.shields.io/npm/v/@mcpware/cross-code-organizer)](https://www.npmjs.com/package/@mcpware/cross-code-organizer)
-[![npm downloads](https://img.shields.io/npm/dt/@mcpware/cross-code-organizer?label=downloads)](https://www.npmjs.com/package/@mcpware/cross-code-organizer)
-[![GitHub stars](https://img.shields.io/github/stars/mcpware/cross-code-organizer)](https://github.com/mcpware/cross-code-organizer/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/mcpware/cross-code-organizer)](https://github.com/mcpware/cross-code-organizer/network/members)
+[![npm downloads (new)](https://img.shields.io/npm/dt/@mcpware/cross-code-organizer?label=downloads%20%28new%29)](https://www.npmjs.com/package/@mcpware/cross-code-organizer)
+[![npm downloads (legacy)](https://img.shields.io/npm/dt/@mcpware/claude-code-organizer?label=downloads%20%28legacy%29)](https://www.npmjs.com/package/@mcpware/claude-code-organizer)
+[![GitHub stars](https://img.shields.io/github/stars/mcpware/claude-code-organizer)](https://github.com/mcpware/claude-code-organizer/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/mcpware/claude-code-organizer)](https://github.com/mcpware/claude-code-organizer/network/members)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-297%20passing-brightgreen)](https://github.com/mcpware/cross-code-organizer)
-[![Zero Telemetry](https://img.shields.io/badge/telemetry-zero-blue)](https://github.com/mcpware/cross-code-organizer)
-[![MCP Security](https://img.shields.io/badge/MCP-Security%20Scanner-red)](https://github.com/mcpware/cross-code-organizer)
+[![Tests](https://img.shields.io/badge/tests-297%20passing-brightgreen)](https://github.com/mcpware/claude-code-organizer)
+[![Zero Telemetry](https://img.shields.io/badge/telemetry-zero-blue)](https://github.com/mcpware/claude-code-organizer)
+[![MCP Security](https://img.shields.io/badge/MCP-Security%20Scanner-red)](https://github.com/mcpware/claude-code-organizer)
 [![Awesome MCP](https://img.shields.io/badge/Awesome-MCP%20Servers-fc60a8?logo=awesomelists&logoColor=white)](https://github.com/punkpeye/awesome-mcp-servers)
-[![Verified Against CC Source](https://img.shields.io/badge/Verified-Claude%20Code%20Source-blueviolet)](https://github.com/mcpware/cross-code-organizer#verified-against-claude-code-source)
+[![Verified Against CC Source](https://img.shields.io/badge/Verified-Claude%20Code%20Source-blueviolet)](https://github.com/mcpware/claude-code-organizer#verified-against-claude-code-source)
 English | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [廣東話](README.zh-HK.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Português](README.pt-BR.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md) | [ไทย](README.th.md)
 
 **Cross-Code Organizer (CCO)** is the universal AI coding tool config manager: a free, open-source dashboard for managing AI coding harness configuration across global and project scopes. It now supports **Claude Code** and **Codex CLI**; use the harness selector in the sidebar to switch between them. Claude memories, skills, MCP servers, settings, agents, rules, and hooks sit next to Codex config, skills, profiles, sessions, history, and runtime files in one organizer. Security scanning, context/token visibility, per-project controls, backups, and bulk cleanup stay in the same workflow.
@@ -251,7 +252,7 @@ Automatic Backup Center scheduling currently uses `systemd` on Linux/WSL and `la
 | **Cost Tracker** | 💡 Exploring | Track token usage and cost per session, per project |
 | **Relationship Graph** | 💡 Exploring | Visual dependency graph showing how skills, hooks, and MCP servers connect |
 
-Have a feature idea? [Open an issue](https://github.com/mcpware/cross-code-organizer/issues).
+Have a feature idea? [Open an issue](https://github.com/mcpware/claude-code-organizer/issues).
 
 ## Community
 
