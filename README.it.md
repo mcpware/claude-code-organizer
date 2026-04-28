@@ -1,33 +1,41 @@
 # Cross-Code Organizer (CCO)
 
+### Prima Claude Code Organizer — il primo organizer cross-harness di configurazioni per AI coding tool.
+
 [![npm version](https://img.shields.io/npm/v/@mcpware/cross-code-organizer)](https://www.npmjs.com/package/@mcpware/cross-code-organizer)
 [![npm downloads](https://img.shields.io/npm/dt/@mcpware/cross-code-organizer?label=downloads)](https://www.npmjs.com/package/@mcpware/cross-code-organizer)
 [![GitHub stars](https://img.shields.io/github/stars/mcpware/cross-code-organizer)](https://github.com/mcpware/cross-code-organizer/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/mcpware/cross-code-organizer)](https://github.com/mcpware/cross-code-organizer/network/members)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-138%20passing-brightgreen)](https://github.com/mcpware/cross-code-organizer)
+[![Tests](https://img.shields.io/badge/tests-314%20passing-brightgreen)](https://github.com/mcpware/cross-code-organizer)
 [![Zero Telemetry](https://img.shields.io/badge/telemetry-zero-blue)](https://github.com/mcpware/cross-code-organizer)
 [![MCP Security](https://img.shields.io/badge/MCP-Security%20Scanner-red)](https://github.com/mcpware/cross-code-organizer)
 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [廣東話](README.zh-HK.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Bahasa Indonesia](README.id.md) | Italiano | [Português](README.pt-BR.md) | [Türkçe](README.tr.md) | [Tiếng Việt](README.vi.md) | [ไทย](README.th.md)
 
-**Cross-Code Organizer (CCO)** ora è il universal AI coding tool config manager: una dashboard per gestire config di Claude Code e Codex CLI — server MCP, skill, sessioni, profili, runtime e file di progetto — senza uscire dalla finestra. Nel sidebar c'è un harness selector per passare da un tool all'altro.
+**Cross-Code Organizer (CCO)** è un organizer cross-harness di configurazioni per AI coding tool. Una dashboard, tutti gli harness: Claude Code, Codex CLI e qualunque harness futuro tu voglia collegare. Cambia harness dal sidebar, ispeziona cosa carica ogni tool e ripulisci il tuo ambiente AI coding senza scavare in cartelle nascoste.
 
-> **v0.19.0:** Codex CLI è il secondo harness supportato. Cursor, Windsurf e Aider sono i prossimi in roadmap.
+Se sei arrivato cercando **Claude Code Organizer**, `claude-code-organizer`, **Cross Code Organizer** o `cross-code-organizer`, sei nel posto giusto: CCO è lo stesso progetto rinominato e ampliato, ora con supporto cross-harness per **Claude Code**, **Codex CLI** e gestione **MCP**.
 
-> **Privacy:** CCO legge solo i file di config dell'harness selezionato (`~/.claude/`, `~/.codex/` e config di progetto). Non invia usage telemetry.
+CCO ti dà visibilità cross-harness. Claude Code ha memories, skill, agent, hook, slash command, server MCP, sessioni e tracking del context budget. Codex CLI ha istruzioni AGENTS, profili, sessioni, history, shell snapshot, config TOML, server MCP e skill. CCO scansiona ogni harness con il suo adapter, mostra tutto in una dashboard e ti permette di lavorare oltre i confini del singolo harness: preview dei file, security scan MCP, backup dello stato dell'harness e pulizia delle config fuori posto. Aggiungere un altro harness è un file adapter.
+
+> **v0.19.3:** Le preview di Claude Code ora resistono ai failure del renderer Markdown, vengono scansionate le skill fornite dai plugin e la discovery dei progetti gestisce path non ASCII, path con encoding lossy e directory symlinked.
+
+> Scansiona server MCP avvelenati. Recupera token di contesto sprecati. Disabilita server MCP per progetto. Trova e cancella memories duplicate. Sposta le config fuori posto dove devono stare.
+
+> **Privacy:** CCO legge solo i file di config dell'harness selezionato sulla tua macchina (`~/.claude/`, `~/.codex/` e config di progetto). Non invia usage telemetry. Controlla il registro npm per gli update di versione, salvo rete bloccata.
 
 ![Cross-Code Organizer (CCO) Demo](docs/demo.gif)
 
-<sub>138 test E2E | Zero dependencies | Demo registrata da AI con [Pagecast](https://github.com/mcpware/pagecast)</sub>
+<sub>314 test (113 unit + 201 E2E) | Zero telemetry | Demo registrata da AI con [Pagecast](https://github.com/mcpware/pagecast)</sub>
 
-> 100+ stelle in 5 giorni. L'ha fatto uno che ha mollato informatica a metà, dopo aver scoperto 140 file di config invisibili che pilotano Claude. Nessuno dovrebbe fare `cat` su ognuno. Primo progetto open source — grazie a chi ha messo la stella, testato e aperto issue.
+> 100+ stelle in 5 giorni. L'ha fatto uno che ha mollato informatica a metà, dopo aver scoperto 140 file di config invisibili che pilotano AI coding tool. Nessuno dovrebbe fare `cat` su ognuno. Primo progetto open source — grazie a chi ha messo la stella, testato e aperto issue.
 
 ## Il ciclo: Scansiona, Trova, Correggi
 
-Ogni volta che apri un AI coding tool, succedono tre cose di cui non ti accorgi:
+Ogni volta che apri un AI coding harness, succedono tre cose di cui non ti accorgi:
 
-1. **Le config finiscono nello scope sbagliato.** Hai una skill Python in Global? Viene caricata in tutti i tuoi progetti React. Una memory che hai impostato in un progetto? Resta lì. Gli altri progetti non la vedono. Claude se ne frega dello scope quando crea roba.
+1. **Non sai cosa Claude carica davvero.** Ogni categoria ha regole diverse: i server MCP seguono la precedenza, gli agent si shadowano per nome, i settings si fondono tra file. Non puoi vedere cosa è attivo senza scavare in più directory.
 
 2. **La context window si riempie.** Duplicati, istruzioni vecchie, schema dei tool MCP — tutto pre-caricato prima che tu scriva qualcosa. Più roba c'è dentro, meno preciso diventa Claude.
 
@@ -35,11 +43,11 @@ Ogni volta che apri un AI coding tool, succedono tre cose di cui non ti accorgi:
 
 Ci sono altri tool che risolvono questi problemi, ma uno alla volta. **CCO li risolve tutti in un colpo:**
 
-**Scansiona** → Vedi ogni memory, skill, server MCP, rule, command, agent, hook, plugin, plan e session. Tutti gli scope. Un albero solo.
+**Scansiona** → Vedi ogni memory, skill, server MCP, rule, command, agent, hook, plugin, plan e session in tutti i progetti. Una sola vista.
 
-**Trova** → Duplicati, roba nello scope sbagliato. Il Context Budget ti dice cosa si sta mangiando i token. Il Security Scanner ti dice cosa sta avvelenando i tool.
+**Trova** → Show Effective rivela cosa Claude carica davvero per progetto. Il Context Budget ti dice cosa si sta mangiando i token. Il Security Scanner ti dice cosa sta avvelenando i tool.
 
-**Correggi** → Drag-and-drop nello scope giusto. Via il duplicato. Clicca un finding di sicurezza e arrivi dritto sulla voce del server MCP — cancellalo, spostalo, controlla la config. Fine.
+**Correggi** → Sposta gli elementi dove devono stare. Via i duplicati. Clicca un finding di sicurezza e arrivi dritto sulla voce del server MCP — cancellalo, spostalo, controlla la config. Fine.
 
 ![Scansiona, Trova, Correggi — tutto in una dashboard](docs/3panel.png)
 
@@ -61,23 +69,27 @@ Oppure lancialo direttamente: `npx @mcpware/cross-code-organizer`
 
 | | **CCO** | Scanner standalone | App desktop | Estensioni VS Code |
 |---|:---:|:---:|:---:|:---:|
-| Gerarchia scope (Global > Project) | **Sì** | No | No | Parziale |
-| Drag-and-drop tra scope | **Sì** | No | No | No |
+| Show Effective (regole per categoria) | **Sì** | No | No | No |
+| Sposta elementi dove devono stare | **Sì** | No | No | No |
 | Security scan → click sul finding → naviga → cancella | **Sì** | Solo scan | No | No |
-| Context budget per elemento con ereditarietà | **Sì** | No | No | No |
+| Context budget per elemento | **Sì** | No | No | No |
+| Disabilita/abilita MCP per progetto | **Sì** | No | No | No |
+| Verificato contro il source di Claude Code | **Sì** | No | No | No |
 | Undo su ogni azione | **Sì** | No | No | No |
 | Operazioni in blocco | **Sì** | No | No | No |
 | Zero-install (`npx`) | **Sì** | Dipende | No (Tauri/Electron) | No (VS Code) |
+| Distill sessioni + image trim | **Sì** | No | No | No |
+| Backup Center (git-backed, auto-schedule) | **Sì** | No | No | No |
 | Tool MCP (accessibili dall'AI) | **Sì** | No | No | No |
-| Supporto multi-harness | **Claude Code + Codex CLI** | No | No | No |
+| Harness multipli | **Claude Code + Codex CLI** | No | No | No |
 
 ## Cross-Harness: Claude Code + Codex CLI
 
-CCO è nato come organizer per Claude Code. Dalla v0.19.0 diventa una dashboard cross-harness.
+CCO è nato come organizer per Claude Code. v0.19.0 lo ha trasformato in una dashboard cross-harness.
 
-Usa il selector **Harness** nel sidebar per passare tra Claude Code e Codex CLI. Ogni harness mantiene path, categorie e regole proprie: Claude Code gestisce memories, skill, MCP, command, agent e hook; Codex CLI gestisce config `~/.codex`, file AGENTS, skill, MCP server, profile, session, history, shell snapshot e runtime.
+Usa il selector **Harness** nel sidebar per passare tra Claude Code e Codex CLI. Ogni harness mantiene regole, path, categorie e capacità proprie: Claude Code ha Show Effective, Context Budget, MCP Controls, sessioni, backup e security scan; Codex CLI ha config `~/.codex`, file AGENTS, skill, server MCP, profile, session, history, shell snapshot, runtime file, backup e security scan.
 
-I prossimi harness pianificati sono Cursor, Windsurf e Aider.
+L'obiettivo non è un altro settings viewer per un solo tool. CCO sta diventando il universal AI coding tool config manager. Cursor, Windsurf e Aider sono i prossimi harness pianificati.
 
 ## Sai cosa si mangia il tuo context?
 
@@ -93,29 +105,27 @@ La tua context window non è 200K token. È 200K meno tutto quello che Claude pr
 - Toggle 200K / 1M context window
 - Breakdown per scope ereditato — vedi esattamente cosa arriva dagli scope padre
 
-## Tieni puliti gli scope
+## Config Viewer: vedi cosa Claude Code carica davvero per progetto
 
-Claude Code organizza tutto in tre livelli di scope — ma non te lo dice:
+Claude Code non usa una regola unica per tutto. Ogni categoria ha la sua:
 
-```
-Global                    ← caricato in OGNI sessione sulla tua macchina
-       └─ Project         ← caricato solo quando sei in questa directory
-```
+- **Server MCP:** `local > project > user` — server con lo stesso nome usano lo scope più specifico
+- **Agent:** gli agent di progetto sovrascrivono gli agent user con lo stesso nome
+- **Command:** disponibili da user e project — i conflitti di nome non sono supportati in modo affidabile
+- **Skill:** disponibili da fonti personali, di progetto e plugin
+- **Config / Settings:** risolti tramite catena di precedenza
 
-Il problema: **Claude crea memory e skill nella directory dove ti trovi in quel momento.** Dici a Claude "usa sempre gli import ESM" mentre lavori su `~/myapp` — quella memory resta nello scope di quel progetto. Apri un altro progetto e Claude non ne sa niente. Glielo dici di nuovo. Adesso hai la stessa memory in due posti, e tutte e due consumano token.
-
-Stessa storia con le skill. Fai una skill di deploy nel repo del backend — finisce nello scope di quel progetto. Gli altri repo non la vedono. Risultato: la ricrei dappertutto.
-
-**CCO ti mostra l'albero completo degli scope.** Vedi quali memory, skill e server MCP impattano quali progetti — e poi trascini tutto nello scope giusto.
+Clicca **✦ Show Effective** per vedere cosa si applica davvero in qualsiasi progetto. Elementi shadowed, conflitti di nome e config caricate dagli ancestor vengono mostrati con badge e spiegazioni.
 
 ![Server MCP duplicati](docs/reloaded%20mcp%20form%20diff%20scope.png)
 
 Teams installato due volte, Gmail tre, Playwright tre. Li configuri in uno scope, Claude te li reinstalla in un altro.
 
-- **Sposta tutto con drag-and-drop** — trascina una memory da Project a Global. Un gesto. Adesso tutti i progetti sulla tua macchina ce l'hanno.
-- **Duplicati? Trovati subito** — tutti gli elementi raggruppati per categoria, trasversalmente agli scope. Tre copie della stessa memory? Cancella quelle in più.
+- **Sposta elementi** — sposta una memory, una skill o un server MCP dove deve stare. I warning mostrano cambi di precedenza e conflitti di nome.
+- **Duplicati? Trovati subito** — tutti gli elementi raggruppati per categoria. Tre copie della stessa memory? Cancella quelle in più.
 - **Undo su tutto** — ogni spostamento e ogni cancellazione ha il suo pulsante undo. Anche le voci MCP nel JSON.
 - **Operazioni in blocco** — attiva la select mode, spunta più elementi, spostali o cancellali tutti insieme.
+- **Vista flat o tree** — la vista flat elenca tutti i progetti allo stesso livello. Attiva tree view (🌲) per ispezionare la struttura del filesystem.
 
 ## Scova i tool avvelenati prima che freghino te
 
@@ -140,9 +150,9 @@ CCO si connette a ogni server MCP, prende le definizioni reali dei tool e le fa 
 | Server MCP | Sì | Sì | Sì | Global + Project |
 | Command (slash command) | Sì | Sì | Sì | Global + Project |
 | Agent (subagent) | Sì | Sì | Sì | Global + Project |
-| Rule (vincoli di progetto) | Sì | Sì | Sì | Global + Project |
-| Plan | Sì | Sì | Sì | Global + Project |
-| Session | Sì | — | Sì | Solo Project |
+| Rule (vincoli di progetto) | Sì | — | Sì | Global + Project |
+| Plan | Sì | — | Sì | Global + Project |
+| Session (con distill + image trim) | Sì | — | Sì | Solo Project |
 | Config (CLAUDE.md, settings.json) | Sì | Bloccato | — | Global + Project |
 | Hook | Sì | Bloccato | — | Global + Project |
 | Plugin | Sì | Bloccato | — | Solo Global |
