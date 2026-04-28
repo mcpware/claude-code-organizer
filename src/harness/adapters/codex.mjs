@@ -141,6 +141,39 @@ const categories = [
     preview: "session JSONL",
     sortDefault: "date",
   }),
+  defineCategory({
+    id: "history",
+    label: "History",
+    filterLabel: "History",
+    icon: "🕘",
+    order: 90,
+    group: "history",
+    source: "~/.codex/history.jsonl",
+    preview: "prompt history JSONL",
+    sortDefault: "date",
+  }),
+  defineCategory({
+    id: "shell",
+    label: "Shell Snapshots",
+    filterLabel: "Shell",
+    icon: "💻",
+    order: 100,
+    group: "shell",
+    source: "~/.codex/shell_snapshots/*.sh",
+    preview: "shell snapshot",
+    sortDefault: "date",
+  }),
+  defineCategory({
+    id: "runtime",
+    label: "Runtime",
+    filterLabel: "Runtime",
+    icon: "🗄️",
+    order: 110,
+    group: "runtime",
+    source: "~/.codex runtime metadata, caches, logs, and databases",
+    preview: "runtime file",
+    sortDefault: "date",
+  }),
 ];
 
 const scopeTypes = [
@@ -222,6 +255,10 @@ function compactText(value, maxLength = 120) {
   return typeof value === "string"
     ? value.replace(/\s+/g, " ").trim().slice(0, maxLength)
     : "";
+}
+
+function nonEmptyLines(content) {
+  return content ? content.split(/\r?\n/).filter(Boolean) : [];
 }
 
 async function findFilesBySuffix(root, suffix, maxDepth = 8, current = root, depth = 0) {
@@ -761,6 +798,160 @@ async function scanSessions(scope, ctx) {
   return items;
 }
 
+async function scanHistory(scope, ctx) {
+  if (scope.id !== "global") return [];
+
+  const path = join(codexDir(ctx), "history.jsonl");
+  const stat = await safeStat(path);
+  if (!stat) return [];
+
+  const lines = nonEmptyLines(await safeReadFile(path));
+  const last = parseJsonLine(lines.at(-1) || "");
+  const lastText = compactText(last?.text, 120);
+
+  return [{
+    category: "history",
+    scopeId: scope.id,
+    name: "history.jsonl",
+    fileName: "history.jsonl",
+    description: `${lines.length} prompt history entries${lastText ? `; latest: ${lastText}` : ""}`,
+    subType: "prompt-history",
+    ...statFields(stat),
+    path,
+    value: {
+      entries: lines.length,
+      latestSessionId: last?.session_id || "",
+      latestTimestamp: last?.ts || null,
+    },
+    valueType: "jsonl",
+  }];
+}
+
+function shellSnapshotSessionId(fileName) {
+  const match = fileName.match(/^([0-9a-f-]{36})\./i);
+  return match ? match[1] : "";
+}
+
+async function scanShellSnapshots(scope, ctx) {
+  if (scope.id !== "global") return [];
+
+  const dir = join(codexDir(ctx), "shell_snapshots");
+  const items = [];
+  if (!(await exists(dir))) return items;
+
+  let entries;
+  try { entries = await readdir(dir, { withFileTypes: true }); } catch { return items; }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".sh")) continue;
+    const path = join(dir, entry.name);
+    const stat = await safeStat(path);
+    const sessionId = shellSnapshotSessionId(entry.name);
+    items.push({
+      category: "shell",
+      scopeId: scope.id,
+      name: sessionId ? `Snapshot ${sessionId.slice(0, 8)}` : entry.name,
+      fileName: entry.name,
+      description: sessionId ? `Shell environment snapshot for session ${sessionId}` : "Shell environment snapshot",
+      subType: "shell-snapshot",
+      ...statFields(stat),
+      path,
+      sessionId,
+    });
+  }
+
+  return items;
+}
+
+function runtimeDescription(fileName, value, stat) {
+  if (fileName === "version.json" && value) {
+    return [
+      value.latest_version ? `latest: ${value.latest_version}` : "",
+      value.last_checked_at ? `checked: ${value.last_checked_at}` : "",
+    ].filter(Boolean).join(", ") || "Codex version metadata";
+  }
+  if (fileName === "models_cache.json" && value) {
+    const modelCount = Array.isArray(value.models) ? value.models.length : objectEntries(value.models).length;
+    return [
+      modelCount ? `${modelCount} cached models` : "model cache",
+      value.client_version ? `client: ${value.client_version}` : "",
+      value.fetched_at ? `fetched: ${value.fetched_at}` : "",
+    ].filter(Boolean).join(", ");
+  }
+  if (fileName === "installation_id") {
+    return stat?.size ? "Codex installation identifier" : "Empty Codex installation identifier";
+  }
+  if (fileName.endsWith(".sqlite")) return "Codex SQLite state database";
+  if (fileName.endsWith(".sqlite-shm")) return "SQLite shared-memory sidecar";
+  if (fileName.endsWith(".sqlite-wal")) return "SQLite write-ahead log";
+  if (fileName.endsWith(".log")) return "Codex TUI log";
+  if (fileName.endsWith(".sh")) return "Codex notification script";
+  if (fileName === ".personality_migration") return "Personality migration marker";
+  return "Codex runtime file";
+}
+
+function runtimeValue(fileName, value) {
+  if (!value) return undefined;
+  if (fileName === "models_cache.json") {
+    return {
+      fetchedAt: value.fetched_at || "",
+      clientVersion: value.client_version || "",
+      modelCount: Array.isArray(value.models) ? value.models.length : objectEntries(value.models).length,
+    };
+  }
+  return value;
+}
+
+async function scanRuntime(scope, ctx) {
+  if (scope.id !== "global") return [];
+
+  const root = codexDir(ctx);
+  const runtimeFiles = [
+    "version.json",
+    "installation_id",
+    "models_cache.json",
+    "state_5.sqlite",
+    "state_5.sqlite-shm",
+    "state_5.sqlite-wal",
+    "logs_2.sqlite",
+    "logs_2.sqlite-shm",
+    "logs_2.sqlite-wal",
+    ".personality_migration",
+    "log/codex-tui.log",
+    "bin/codex-notify-focus.sh",
+    "bin/codex-notify-turn.sh",
+  ];
+  const items = [];
+
+  for (const relPath of runtimeFiles) {
+    const path = join(root, relPath);
+    const stat = await safeStat(path);
+    if (!stat) continue;
+    const fileName = basename(path);
+    const isJson = fileName.endsWith(".json");
+    const value = isJson ? await readJson(path) : null;
+
+    items.push({
+      category: "runtime",
+      scopeId: scope.id,
+      name: relPath,
+      fileName,
+      description: runtimeDescription(fileName, value, stat),
+      subType: fileName.endsWith(".sqlite") || fileName.includes(".sqlite-")
+        ? "database"
+        : fileName.endsWith(".sh")
+          ? "script"
+          : "runtime",
+      ...statFields(stat),
+      path,
+      value: isJson ? runtimeValue(fileName, value) : undefined,
+      valueType: isJson ? "json" : extname(fileName).replace(/^\./, "") || "file",
+    });
+  }
+
+  return items;
+}
+
 const unsupportedOperations = {
   getValidDestinations() {
     return [];
@@ -814,6 +1005,9 @@ export const codexAdapter = {
     rule: scanRules,
     plugin: scanPlugins,
     session: scanSessions,
+    history: scanHistory,
+    shell: scanShellSnapshots,
+    runtime: scanRuntime,
   },
   afterScan() {
     return { effective: noEffectiveModel };
