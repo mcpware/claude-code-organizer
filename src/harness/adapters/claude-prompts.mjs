@@ -8,6 +8,7 @@ export const CLAUDE_PROMPT_PLACEHOLDERS = [
   "category",
   "cdCmd",
   "destName",
+  "executable",
   "fileName",
   "fromScopeName",
   "mcpCommand",
@@ -53,7 +54,7 @@ Please read this file and explain:
       {
         ico: "💬",
         label: "Resume Session",
-        prompt: `{{cdCmd}}claude --resume {{sessionId}}
+        prompt: `{{cdCmd}}{{executable}} --resume {{sessionId}}
 
 # Session file: {{path}}`,
       },

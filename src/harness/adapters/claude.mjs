@@ -12,6 +12,7 @@ import { homedir, platform } from "node:os";
 import { EFFECTIVE_RULES } from "../../effective.mjs";
 import { scanHarness } from "../scanner-framework.mjs";
 import { claudeOperations } from "./claude-operations.mjs";
+import { CLAUDE_CC_ACTION_PROMPTS, CLAUDE_MOVE_PROMPT_TEMPLATES } from "./claude-prompts.mjs";
 
 let HOME = homedir();
 let RUNTIME_PLATFORM = platform();
@@ -1388,6 +1389,10 @@ export const claudeAdapter = {
   categories,
   scopeTypes,
   capabilities,
+  prompts: {
+    actions: CLAUDE_CC_ACTION_PROMPTS,
+    move: CLAUDE_MOVE_PROMPT_TEMPLATES,
+  },
   getPaths(ctx) {
     const home = ctx?.home || HOME;
     const managedDir = managedDirForPlatform(ctx?.platform || RUNTIME_PLATFORM);

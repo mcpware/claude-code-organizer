@@ -527,7 +527,7 @@ function setupItemList() {
         const sessionId = item.fileName?.replace(/\.jsonl$/, "") || "";
         const scope = getScopeById(item.scopeId);
         const dir = scope?.repoDir || "~";
-        const cmd = `cd ${dir} && claude --resume ${sessionId}`;
+        const cmd = `cd ${dir} && ${getHarnessExecutable()} --resume ${sessionId}`;
         navigator.clipboard.writeText(cmd).then(() => {
           toast("Copied resume command — paste in terminal");
         });
@@ -585,7 +585,7 @@ function setupItemList() {
     if (newSessionBtn) {
       const scope = getScopeById(newSessionBtn.dataset.scopeId);
       const dir = scope?.repoDir || "~";
-      const cmd = `cd ${dir} && claude`;
+      const cmd = `cd ${dir} && ${getHarnessExecutable()}`;
       navigator.clipboard.writeText(cmd).then(() => {
         toast("Copied: " + cmd);
       });
@@ -1688,88 +1688,97 @@ async function saveFrontmatterField(filePath, key, value) {
   }
 }
 
+function getHarnessDescriptor() {
+  return data?.harness || availableHarnesses.find((harness) => harness.id === selectedHarnessId) || {
+    id: selectedHarnessId || "harness",
+    displayName: "Selected Harness",
+    shortName: "Harness",
+    executable: "harness",
+  };
+}
+
+function getHarnessName() {
+  const harness = getHarnessDescriptor();
+  return harness.displayName || harness.shortName || harness.id || "Selected Harness";
+}
+
+function getHarnessExecutable() {
+  return getHarnessDescriptor().executable || selectedHarnessId || "harness";
+}
+
+function getPromptTemplates() {
+  return data?.adapterData?.prompts || data?.prompts || null;
+}
+
+function getPromptContext(item, extra = {}) {
+  const scope = getScopeById(item.scopeId);
+  const sessionId = item.fileName?.replace(/\.jsonl$/, "") || "";
+  const cdCmd = scope?.repoDir ? `cd ${scope.repoDir} && ` : "";
+  return {
+    category: item.category,
+    cdCmd,
+    executable: getHarnessExecutable(),
+    fileName: item.fileName || "",
+    harnessName: getHarnessName(),
+    mcpCommand: item.mcpConfig?.command || "unknown",
+    mcpConfigJson: JSON.stringify(item.mcpConfig || {}, null, 2),
+    mcpPackageArg: (item.mcpConfig?.args || [])[1] || "",
+    name: item.name,
+    path: item.path || "",
+    scopeId: item.scopeId,
+    sessionId,
+    subType: item.subType || item.category,
+    ...extra,
+  };
+}
+
+function renderPromptTemplate(template, context) {
+  if (!template) return template;
+  return String(template).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
+    return context[key] === undefined || context[key] === null ? "" : String(context[key]);
+  });
+}
+
+function resolvePromptAction(action, prompts) {
+  if (!action?.use) return action;
+  const [group, key] = action.use.split(".");
+  return prompts?.[group]?.[key] || null;
+}
+
+function shouldShowPromptAction(action, item) {
+  if (!action) return false;
+  if (!action.when) return true;
+  if (action.when === "notDistilled") return !item.name?.startsWith("[distilled");
+  if (action.when === "securitySeverityUnreachable") return getSecuritySeverity(item.name) === "unreachable";
+  return true;
+}
+
 function renderCcActions(item) {
   const container = document.getElementById("detailCcActions");
   const btnRow = document.getElementById("ccBtnRow");
-  const buttons = [];
-
-  const explainPrompt = `I have a Claude Code ${item.category} called "${item.name}" at:\n${item.path}\n\nPlease read this file and explain:\n1. What does this ${item.category} do?\n2. When does it get loaded / triggered?\n3. What would break if I removed or changed it?\n4. Are there any other files that depend on it?`;
-
-  // Info line for unlocked items
-  if (!item.locked && item.category !== "session") {
-    buttons.push({ ico: "🤖", label: "", prompt: null, info: "Use these prompts for guided changes — Claude Code will read the file, explain the impact, and confirm before making changes." });
+  const prompts = getPromptTemplates()?.actions;
+  if (!prompts?.categories) {
+    container.classList.add("hidden");
+    return;
   }
 
-  switch (item.category) {
-    case "session": {
-      const sessionId = (item.fileName || "").replace(".jsonl", "");
-      if (sessionId) {
-        const sessionScope = getScopeById(item.scopeId);
-        const cdCmd = sessionScope?.repoDir ? `cd ${sessionScope.repoDir} && ` : "";
-        buttons.push({ ico: "💡", label: "", prompt: null, info: "Sessions can be resumed directly in Claude Code. Copy the command below and paste it in any terminal to continue where you left off." });
-        buttons.push({ ico: "💬", label: "Resume Session", prompt: `${cdCmd}claude --resume ${sessionId}\n\n# Session file: ${item.path}` });
-        buttons.push({ ico: "📋", label: "Summarize", prompt: `I have a Claude Code session at:\n${item.path}\n\nPlease read this session file and give me a summary:\n1. What was this session about?\n2. What was accomplished?\n3. Were there any unfinished tasks or pending actions?\n4. What files were modified?` });
-
-        // Not yet distilled — show distill option in CC actions
-        if (!item.name?.startsWith("[distilled")) {
-          buttons.push({ ico: "🧹", label: "Distill Session", prompt: `Please distill this session for me:\n${item.path}\n\nThis will:\n1. Back up the original (CC compact will destroy it otherwise)\n2. Create a clean resumable session\n3. Generate an index of large tool results` });
-        }
-      }
-      break;
-    }
-    case "memory":
-      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
-      buttons.push({ ico: "✏️", label: "Edit Content", prompt: `I want to edit this Claude Code memory: "${item.name}"\nPath: ${item.path}\nType: ${item.subType || "memory"}\n\nBefore editing:\n1. Read the current content\n2. Show me the current frontmatter (name, description, type) and body\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Only save after I confirm` });
-      break;
-    case "skill":
-      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
-      buttons.push({ ico: "✏️", label: "Edit Skill", prompt: `I want to edit this Claude Code skill: "${item.name}"\nPath: ${item.path}\n\nBefore editing:\n1. Read the SKILL.md content\n2. Explain what this skill does and when it triggers\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Warn if the change could affect how Claude Code invokes it\n6. Only save after I confirm` });
-      break;
-    case "mcp":
-      buttons.push({ ico: "📋", label: "Explain This", prompt: `I have a Claude Code MCP server called "${item.name}" at:\n${item.path}\n\nPlease explain:\n1. What does this MCP server do?\n2. What tools does it provide?\n3. How is it configured (command, args, env)?\n4. Is it currently working? Check if the command exists on this system.` });
-      buttons.push({ ico: "🔧", label: "Edit Config", prompt: `I want to modify this MCP server configuration: "${item.name}"\nPath: ${item.path}\n\nBefore changing:\n1. Read the current MCP config\n2. Show me the current command, args, and env settings\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Warn if this could break any tools that depend on this MCP server\n6. Only save after I confirm` });
-      if (getSecuritySeverity(item.name) === "unreachable") {
-        buttons.push({ ico: "🩺", label: "Fix Server", prompt: `My MCP server "${item.name}" is unreachable — it failed to connect during a security scan.\nConfig path: ${item.path}\nConfig: ${JSON.stringify(item.mcpConfig, null, 2)}\n\nPlease diagnose and fix:\n1. Check if the command exists: which ${item.mcpConfig?.command || "unknown"}\n2. If it's an npx package, check if it's installed: npm ls -g ${(item.mcpConfig?.args || [])[1] || ""}\n3. Check if required env vars are set\n4. Try running the server manually to see the error\n5. Suggest a fix (install package, set env var, fix config)\n6. Only make changes after I confirm` });
-      }
-      break;
-    case "plan":
-      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
-      buttons.push({ ico: "▶️", label: "Continue Plan", prompt: `I have an existing Claude Code plan at:\n${item.path}\n\nPlease read this plan and:\n1. Summarize what the plan is about\n2. Show which steps are done and which are remaining\n3. Ask me if I want to continue from where it left off` });
-      break;
-    case "command":
-      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
-      buttons.push({ ico: "✏️", label: "Edit Command", prompt: `I want to edit this Claude Code command: "${item.name}"\nPath: ${item.path}\n\nBefore editing:\n1. Read the current content\n2. Explain what this command does and its argument format\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Only save after I confirm` });
-      break;
-    case "agent":
-      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
-      buttons.push({ ico: "✏️", label: "Edit Agent", prompt: `I want to edit this Claude Code agent: "${item.name}"\nPath: ${item.path}\n\nBefore editing:\n1. Read the current content\n2. Explain what this agent does, what tools it has, and what model it uses\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Only save after I confirm` });
-      break;
-    case "rule":
-      buttons.push({ ico: "💡", label: "", prompt: null, info: "Rules enforce project-specific constraints. Use these prompts to understand or modify them." });
-      buttons.push({ ico: "📋", label: "Explain This", prompt: `I have a Claude Code rule: "${item.name}"\nPath: ${item.path}\n\nPlease read this rule and explain:\n1. What constraint does it enforce?\n2. Why was it created?\n3. What would happen if it were removed?\n4. Are there any edge cases it doesn't cover?` });
-      buttons.push({ ico: "✏️", label: "Modify", prompt: `I want to modify this Claude Code rule: "${item.name}"\nPath: ${item.path}\n\nBefore making any changes:\n1. Read the current content\n2. Explain the rule\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Warn if the change could weaken important constraints\n6. Only save after I confirm` });
-      break;
-    case "config":
-      buttons.push({ ico: "💡", label: "", prompt: null, info: "Config files are managed by Claude Code. Use these prompts to ask Claude Code to help you understand or modify them." });
-      buttons.push({ ico: "📋", label: "Explain This", prompt: `I have a Claude Code config file: "${item.name}"\nPath: ${item.path}\n\nPlease read it and explain:\n1. What does each setting do?\n2. Which settings are most important?\n3. Are there any settings that look unusual or could cause issues?` });
-      buttons.push({ ico: "✏️", label: "Modify", prompt: `I want to modify this Claude Code config: "${item.name}"\nPath: ${item.path}\n\nBefore making any changes:\n1. Read the current content\n2. Explain what each setting does\n3. Ask me what I want to change\n4. Show exactly what will change (before vs after)\n5. Warn if the change could break anything\n6. Only apply after I confirm` });
-      buttons.push({ ico: "🗑️", label: "Remove", prompt: `I want to remove this Claude Code config file: "${item.name}"\nPath: ${item.path}\n\n⚠️ This is a config file — removing it can significantly change how Claude Code behaves in this project.\n\nBefore doing ANYTHING:\n1. Read the entire file and explain what it is — is this CLAUDE.md (project instructions), settings.json (project settings), or settings.local.json (local overrides)?\n2. Explain in plain language what EVERY setting/instruction in this file does\n3. Explain exactly what will change after removal:\n   - If CLAUDE.md: all project-specific instructions, coding conventions, and custom rules will be lost. Claude Code will behave generically.\n   - If settings.json: project-level permission overrides, model preferences, and tool settings will revert to defaults.\n   - If settings.local.json: local environment overrides (API keys, personal preferences) will be lost.\n4. List everything that depends on or references this file\n5. Ask me: "Are you sure you want to remove this? Here is what you will lose: [list]. Type YES to confirm."\n6. Only remove after I type YES — do not proceed on any other response` });
-      break;
-    case "hook":
-      buttons.push({ ico: "💡", label: "", prompt: null, info: "Hooks run automatically on Claude Code events. Use these prompts to understand or modify them safely." });
-      buttons.push({ ico: "📋", label: "Explain This", prompt: `I have a Claude Code hook: "${item.name}"\nPath: ${item.path}\n\nPlease explain:\n1. What event triggers this hook?\n2. What does the hook script do?\n3. What would happen if I disabled or removed it?\n4. Is the hook script working correctly? Check if the script exists and is executable.` });
-      buttons.push({ ico: "✏️", label: "Modify", prompt: `I want to modify this Claude Code hook: "${item.name}"\nPath: ${item.path}\n\nBefore changing:\n1. Read the hook config and the script it runs\n2. Explain when it triggers and what it does\n3. Ask me what I want to change\n4. Show the before vs after diff\n5. Warn about any side effects (e.g. breaking pre-commit checks)\n6. Only apply after I confirm` });
-      buttons.push({ ico: "🗑️", label: "Remove", prompt: `I want to remove this Claude Code hook: "${item.name}"\nPath: ${item.path}\n\nBefore removing:\n1. Read the hook and explain what it does\n2. Tell me what behavior will stop after removal\n3. Check if other hooks or configs depend on it\n4. Only remove after I explicitly confirm` });
-      break;
-    case "plugin":
-      buttons.push({ ico: "💡", label: "", prompt: null, info: "Plugins extend Claude Code's capabilities. Use these prompts to understand or manage them." });
-      buttons.push({ ico: "📋", label: "Explain This", prompt: `I have a Claude Code plugin: "${item.name}"\nPath: ${item.path}\n\nPlease explain:\n1. What does this plugin do?\n2. What features or commands does it add?\n3. Is it actively loaded by Claude Code?\n4. What would change if I removed it?` });
-      buttons.push({ ico: "🗑️", label: "Remove", prompt: `I want to remove this Claude Code plugin: "${item.name}"\nPath: ${item.path}\n\nBefore removing:\n1. Explain what features this plugin provides\n2. Check if any skills, hooks, or configs reference it\n3. Tell me what will stop working after removal\n4. Only remove after I explicitly confirm` });
-      break;
-    default:
-      buttons.push({ ico: "📋", label: "Explain This", prompt: explainPrompt });
-      break;
+  const rawActions = [];
+  if (!item.locked && item.category !== "session" && prompts.common?.unlockedInfo) {
+    rawActions.push(prompts.common.unlockedInfo);
   }
+  rawActions.push(...(prompts.categories[item.category] || prompts.categories.default || []));
+
+  const context = getPromptContext(item);
+  const buttons = rawActions
+    .map((action) => resolvePromptAction(action, prompts))
+    .filter((action) => shouldShowPromptAction(action, item))
+    .map((action) => ({
+      ...action,
+      ico: action.ico || action.icon || "📋",
+      info: renderPromptTemplate(action.info, context),
+      prompt: renderPromptTemplate(action.prompt, context),
+    }))
+    .filter((action) => action.info || action.prompt);
 
   if (buttons.length === 0) {
     container.classList.add("hidden");
@@ -1781,7 +1790,8 @@ function renderCcActions(item) {
     if (btn.info) {
       return `<div class="cc-info"><span class="cc-ico">${btn.ico}</span>${esc(btn.info)}</div>`;
     }
-    return `<button type="button" class="cc-btn" data-prompt="${esc(btn.prompt)}"><span class="cc-ico">${btn.ico}</span>${esc(btn.label)}</button>`;
+    const kind = btn.kind || btn.id || btn.label || "";
+    return `<button type="button" class="cc-btn" data-kind="${esc(kind)}" data-prompt="${esc(btn.prompt)}"><span class="cc-ico">${btn.ico}</span>${esc(btn.label)}</button>`;
   }).join("");
 }
 
@@ -1792,8 +1802,8 @@ function setupCcActions() {
     const prompt = btn.dataset.prompt;
     navigator.clipboard.writeText(prompt).then(() => {
       const orig = btn.innerHTML;
-      const isResume = prompt.startsWith("claude --resume");
-      const msg = isResume ? "Copied! Paste in a new terminal" : "Copied! Paste to Claude Code";
+      const isResume = btn.dataset.kind === "Resume Session" || prompt.includes(`${getHarnessExecutable()} --resume`);
+      const msg = isResume ? "Copied! Paste in a new terminal" : `Copied! Paste to ${getHarnessName()}`;
       btn.innerHTML = `<span class="cc-ico">✅</span>${msg}`;
       setTimeout(() => { btn.innerHTML = orig; }, 2500);
     });
@@ -2569,6 +2579,42 @@ function initSortable() {
   });
 }
 
+function getMovePrompt(item, toScopeId, includeSource = false) {
+  const moveTemplates = getPromptTemplates()?.move || {};
+  const template = includeSource ? moveTemplates.withSourceScope : moveTemplates.withoutSourceScope;
+  const fromScope = getScopeById(item.scopeId);
+  const toScope = getScopeById(toScopeId);
+  const fallback = includeSource
+    ? `I want to move this {{harnessName}} {{category}} to a different scope.
+
+Item: "{{name}}"
+Current path: {{path}}
+From scope: {{fromScopeName}}
+Move to scope: {{toScopeName}}
+
+Before moving, explain what will change and only move after I confirm.`
+    : `I want to move this {{harnessName}} {{category}} to a different scope.
+
+Item: "{{name}}"
+Current path: {{path}}
+Move to scope: {{destName}}
+
+Before moving, explain what will change and only move after I confirm.`;
+
+  return renderPromptTemplate(template || fallback, getPromptContext(item, {
+    destName: toScope?.name || toScopeId,
+    fromScopeName: fromScope?.name || item.scopeId,
+    toScopeName: toScope?.name || toScopeId,
+  }));
+}
+
+function copyMovePrompt(item, toScopeId, includeSource = false) {
+  const prompt = getMovePrompt(item, toScopeId, includeSource);
+  navigator.clipboard.writeText(prompt).then(() => {
+    toast(`Move prompt copied! Paste to ${getHarnessName()} in your terminal.`);
+  });
+}
+
 function setupScopeDropZones() {
   // Drag-and-drop disabled — use Move button instead.
   return;
@@ -2605,13 +2651,8 @@ function setupScopeDropZones() {
     const item = draggingItem;
 
     if (item.locked) {
-      // Locked item — generate CC prompt
-      const destScope = getScopeById(scopeId);
-      const fromScope = getScopeById(item.scopeId);
-      const prompt = `I want to move this Claude Code ${item.category} to a different scope.\n\nItem: "${item.name}"\nCurrent path: ${item.path}\nFrom scope: ${fromScope?.name || item.scopeId}\nMove to scope: ${destScope?.name || scopeId}\n\nBefore moving:\n1. Read the file and understand what it does\n2. Determine the correct destination path for the "${destScope?.name || scopeId}" scope\n3. Check if a ${item.category} with the same name already exists at the destination\n4. Explain what will change — which projects will gain or lose access to this ${item.category}\n5. Warn me about any potential conflicts or breaking changes\n6. Only move the file after I confirm`;
-      navigator.clipboard.writeText(prompt).then(() => {
-        toast("Move prompt copied! Paste to Claude Code in your terminal.");
-      });
+      // Locked item — generate harness prompt
+      copyMovePrompt(item, scopeId, true);
       draggingItem = null;
       return;
     }
@@ -2897,13 +2938,8 @@ async function openMoveModal(item) {
     if (!selectedDest) return;
     closeMoveModal();
     if (item.locked) {
-      // Locked item — generate CC prompt instead of API call
-      const destScope = getScopeById(selectedDest);
-      const destName = destScope?.name || selectedDest;
-      const prompt = `I want to move this Claude Code ${item.category} to a different scope.\n\nItem: "${item.name}"\nCurrent path: ${item.path}\nMove to scope: ${destName}\n\nBefore moving:\n1. Read the file and understand what it does\n2. Determine the correct destination path for the "${destName}" scope\n3. Check if a ${item.category} with the same name already exists at the destination\n4. Explain what will change — which projects will gain or lose access to this ${item.category}\n5. Warn me about any potential conflicts or breaking changes\n6. Only move the file after I confirm`;
-      navigator.clipboard.writeText(prompt).then(() => {
-        toast("Move prompt copied! Paste to Claude Code in your terminal.");
-      });
+      // Locked item — generate harness prompt instead of API call
+      copyMovePrompt(item, selectedDest);
     } else {
       await doMove(item, selectedDest);
     }

@@ -60,6 +60,12 @@ function splitExtras(extras = {}) {
   };
 }
 
+function adapterMetadata(adapter) {
+  const metadata = {};
+  if (adapter.prompts) metadata.prompts = adapter.prompts;
+  return metadata;
+}
+
 /**
  * Assemble a stable ScanResult shape for UI/API consumers.
  *
@@ -82,7 +88,7 @@ export function normalizeScanResult(adapter, scopes, items, extras = {}) {
     counts: buildCounts(items),
     effective: normalizedExtras.effective,
     notices: normalizedExtras.notices,
-    adapterData: normalizedExtras.adapterData,
+    adapterData: { ...adapterMetadata(adapter), ...normalizedExtras.adapterData },
   };
 }
 
