@@ -40,7 +40,17 @@
     "codex-cli",
     "openai-codex",
     "multi-harness",
-    "cross-harness"
+    "cross-harness",
+    "ai-coding-harness",
+    "harness-config",
+    "mcp-security",
+    "claude-config",
+    "codex-config",
+    "cursor-config",
+    "windsurf-config",
+    "aider-config",
+    "ai-config-dashboard",
+    "harness-organizer"
   ],
   "publishConfig": {
     "provenance": true

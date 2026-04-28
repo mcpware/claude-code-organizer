@@ -380,3 +380,12 @@ MIT
 
 ### 2026-03-25
 - v0.7.0: Context Budget — see token cost before you type anything
+
+---
+
+<details>
+<summary>Related search terms</summary>
+
+claude code organizer, claude code config manager, claude code settings manager, claude code memory manager, claude code skills manager, claude code mcp server manager, claude code dashboard, claude code plugin, claude code extension, claude code tool, codex cli organizer, codex cli config manager, codex config editor, codex cli settings, codex cli dashboard, codex cli plugin, openai codex organizer, cross-harness config, cross harness organizer, cross harness manager, ai coding harness, ai harness config, ai harness manager, ai harness organizer, ai coding tool config, ai coding tool organizer, ai coding tool manager, ai coding tool dashboard, ai dev tool config, mcp server manager, mcp server security, mcp server scanner, mcp security audit, mcp tool poisoning, claude memory editor, claude skills editor, claude rules editor, claude agents editor, claude hooks manager, claude settings editor, codex profiles editor, codex sessions viewer, codex memory editor, codex skills editor, cursor config manager, windsurf config manager, aider config manager, ai coding assistant config, claude code backup, codex cli backup, anthropic claude config, openai codex config, cross-code organizer, cco, claude code organizer alternative, codex organizer, ai config dashboard, harness selector, multi-harness, universal ai config
+
+</details>
