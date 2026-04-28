@@ -1200,6 +1200,7 @@ body {
 .d-item-input::placeholder { color: var(--text-faint); font-size: 0.72rem; }
 .d-item-number { width: 80px; }
 .d-item-textarea { min-height: 72px; resize: vertical; line-height: 1.4; }
+.d-item-readonly { color: var(--text-secondary); background: var(--surface-inset); }
 
 /* Collapsible metadata toggle */
 .d-meta-toggle { font-size: 0.7rem; font-weight: 600; color: var(--text-faint); cursor: pointer; padding: 6px 0 2px; user-select: none; letter-spacing: 0.3px; text-transform: uppercase; }

@@ -1602,6 +1602,12 @@ const CODEX_ITEM_CONFIG_FIELDS = {
     { key: "name", label: "Name", type: "text", placeholder: "(not set) — uses folder name", tooltip: "Codex skill frontmatter field used as the skill identifier." },
     { key: "description", label: "Description", type: "textarea", placeholder: "(not set) — describe when Codex should use this skill", tooltip: "Codex uses this description to decide when the skill is relevant." },
   ],
+  profile: [
+    { key: "model", label: "Model", source: "value", type: "text", readOnly: true, placeholder: "(inherits global model)", tooltip: "Codex profile model override from ~/.codex/config.toml." },
+    { key: "sandbox_mode", label: "Sandbox", source: "value", type: "text", readOnly: true, placeholder: "(inherits global sandbox)", tooltip: "Codex profile sandbox mode from ~/.codex/config.toml." },
+    { key: "approval_policy", label: "Approval", source: "value", type: "text", readOnly: true, placeholder: "(inherits global approval policy)", tooltip: "Codex profile approval policy from ~/.codex/config.toml." },
+    { key: "model_reasoning_effort", label: "Reasoning effort", source: "value", type: "text", readOnly: true, placeholder: "(inherits global reasoning effort)", tooltip: "Codex profile reasoning effort from ~/.codex/config.toml." },
+  ],
 };
 
 let _itemConfigTimers = {};
@@ -1632,29 +1638,39 @@ async function renderItemConfig(item) {
   wrap.classList.add("hidden");
   wrap.innerHTML = "";
 
-  const filePath = getItemFilePath(item);
-  if (!filePath) { wrap.classList.add("hidden"); return; }
+  const frontmatterFields = fields.filter(field => (field.source || "frontmatter") === "frontmatter");
+  const filePath = frontmatterFields.length ? getItemFilePath(item) : null;
+  if (frontmatterFields.length && !filePath) { wrap.classList.add("hidden"); return; }
 
   // Read file to get current frontmatter values
   let fm = {};
-  try {
-    const res = await fetchJson(`/api/file-content?path=${encodeURIComponent(filePath)}`);
-    if (renderSeq !== _itemConfigRenderSeq || !selectedItem || itemKey(item) !== itemKey(selectedItem)) return;
-    if (!res.ok) { wrap.classList.add("hidden"); return; }
-    fm = parseFrontmatter(res.content);
-  } catch {
-    if (renderSeq === _itemConfigRenderSeq) wrap.classList.add("hidden");
-    return;
+  if (frontmatterFields.length) {
+    try {
+      const res = await fetchJson(`/api/file-content?path=${encodeURIComponent(filePath)}`);
+      if (renderSeq !== _itemConfigRenderSeq || !selectedItem || itemKey(item) !== itemKey(selectedItem)) return;
+      if (!res.ok) { wrap.classList.add("hidden"); return; }
+      fm = parseFrontmatter(res.content);
+    } catch {
+      if (renderSeq === _itemConfigRenderSeq) wrap.classList.add("hidden");
+      return;
+    }
   }
 
   // Build HTML
   let html = "";
   for (const field of fields) {
+    const fieldSource = field.source || "frontmatter";
+    const values = fieldSource === "value" ? (item.value || {}) : fm;
+    const val = values[field.key] || "";
+    const canEdit = fieldSource === "frontmatter" && !field.readOnly;
+    const readonlyAttr = field.readOnly ? " readonly" : "";
+    const editAttrs = canEdit ? ` data-fm-key="${esc(field.key)}" data-fm-path="${esc(filePath)}"` : "";
+    const readonlyClass = field.readOnly ? " d-item-readonly" : "";
     html += `<div class="d-item-config-row">`;
     html += `<span class="d-info-label" data-tooltip="${esc(field.tooltip)}">${esc(field.label)}</span>`;
 
     if (field.type === "select") {
-      html += `<select class="d-item-select" data-fm-key="${esc(field.key)}" data-fm-path="${esc(filePath)}">`;
+      html += `<select class="d-item-select${readonlyClass}"${editAttrs}${canEdit ? "" : " disabled"}>`;
       for (let i = 0; i < field.options.length; i++) {
         const val = field.options[i];
         const label = field.labels?.[i] || val;
@@ -1663,14 +1679,11 @@ async function renderItemConfig(item) {
       }
       html += `</select>`;
     } else if (field.type === "number") {
-      const val = fm[field.key] || "";
-      html += `<input type="number" class="d-item-input d-item-number" data-fm-key="${esc(field.key)}" data-fm-path="${esc(filePath)}" value="${esc(val)}" placeholder="${esc(field.placeholder || "")}" min="1">`;
+      html += `<input type="number" class="d-item-input d-item-number${readonlyClass}"${editAttrs} value="${esc(val)}" placeholder="${esc(field.placeholder || "")}" min="1"${readonlyAttr}>`;
     } else if (field.type === "textarea") {
-      const val = fm[field.key] || "";
-      html += `<textarea class="d-item-input d-item-textarea" data-fm-key="${esc(field.key)}" data-fm-path="${esc(filePath)}" placeholder="${esc(field.placeholder || "")}">${esc(val)}</textarea>`;
+      html += `<textarea class="d-item-input d-item-textarea${readonlyClass}"${editAttrs} placeholder="${esc(field.placeholder || "")}"${readonlyAttr}>${esc(val)}</textarea>`;
     } else {
-      const val = fm[field.key] || "";
-      html += `<input type="text" class="d-item-input" data-fm-key="${esc(field.key)}" data-fm-path="${esc(filePath)}" value="${esc(val)}" placeholder="${esc(field.placeholder || "")}">`;
+      html += `<input type="text" class="d-item-input${readonlyClass}"${editAttrs} value="${esc(val)}" placeholder="${esc(field.placeholder || "")}"${readonlyAttr}>`;
     }
     html += `</div>`;
   }
