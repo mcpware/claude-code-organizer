@@ -168,7 +168,7 @@ async function init() {
 const CHANGELOG = {
   "0.18.0": {
     title: "Backup Center",
-    tagline: "Never lose your Claude setup again.",
+    tagline: "Never lose your coding harness setup again.",
     changes: [
       "☁ Backup Center: back up every memory, skill, MCP config, rule, plan, agent, and session to a private GitHub repo — one click.",
       "Auto-backup via systemd timer (every 4 hours + on boot). Persistent across reboots.",
@@ -233,7 +233,7 @@ async function checkForUpdate() {
     banner.innerHTML = "🔄 New version available — <code>npx @mcpware/cross-code-organizer@latest</code>";
     banner.addEventListener("click", () => {
       navigator.clipboard.writeText("Run npx @mcpware/cross-code-organizer@latest to update Cross-Code Organizer (CCO) to the latest version.").then(() => {
-        banner.innerHTML = "✅ Copied! Paste into Claude Code";
+        banner.innerHTML = "✅ Copied update prompt";
         setTimeout(() => {
           banner.innerHTML = "🔄 New version available — <code>npx @mcpware/cross-code-organizer@latest</code>";
         }, 2000);
@@ -319,10 +319,20 @@ function setupScopeNotice() {
   if (!tree) return;
   const notice = document.createElement("div");
   notice.className = "scope-notice";
-  notice.innerHTML = `<span class="scope-notice-dismiss" id="scopeNoticeDismiss">✕</span><strong>How ${esc(getHarnessShortName())} scopes work:</strong> Different categories can have different inheritance rules. Use <strong>✦ Show Effective</strong> to see what actually applies in each project. Hover any category pill for its specific rule.`;
+  notice.id = "scopeNotice";
   tree.parentElement.insertBefore(notice, tree);
-  document.getElementById("scopeNoticeDismiss").addEventListener("click", () => {
-    localStorage.setItem(NOTICE_KEY, "1");
+  updateScopeNotice();
+}
+
+function updateScopeNotice() {
+  const notice = document.getElementById("scopeNotice");
+  if (!notice) return;
+  const effectiveCopy = hasCapability("effective")
+    ? `Use <strong>✦ Show Effective</strong> to see what actually applies in each project. Hover any category pill for its specific rule.`
+    : `Categories are shown from the selected scope. Some categories are inventory-only because this harness does not expose project inheritance rules for them.`;
+  notice.innerHTML = `<span class="scope-notice-dismiss" id="scopeNoticeDismiss">✕</span><strong>How ${esc(getHarnessShortName())} scopes work:</strong> Different categories can have different scope rules. ${effectiveCopy}`;
+  document.getElementById("scopeNoticeDismiss")?.addEventListener("click", () => {
+    localStorage.setItem("cco-scope-notice-v1-dismissed", "1");
     notice.remove();
   });
 }
@@ -411,6 +421,7 @@ function updateHarnessBranding() {
       ? `Type <code>/cco</code> in ${esc(name)} to reopen`
       : `Selected harness: <code>${esc(executable)}</code>`;
   }
+  updateScopeNotice();
 }
 
 function updateCapabilityVisibility() {
@@ -1343,10 +1354,19 @@ function renderItem(item) {
   const isFromAncestor = showEffective && effectiveAncestorKeys.has(key);
   const isShadowed     = isFromGlobal && effectiveShadowedKeys.has(key);
   const isConflict     = showEffective && effectiveConflictKeys.has(key);
-  const effectiveBadge = isShadowed     ? `<span class="scope-tag st-shadowed" data-tooltip="This item is overridden by a project-scoped item with the same name">Shadowed</span>`
-                       : isConflict     ? `<span class="scope-tag st-conflict" data-tooltip="Same name exists in both user and project scope — Claude Code does not guarantee which one applies">⚠ Conflict</span>`
-                       : isFromAncestor ? `<span class="scope-tag st-ancestor" data-tooltip="From a parent directory — Claude Code loads CLAUDE.md files by walking up from the working directory">Ancestor</span>`
-                       : isFromGlobal   ? `<span class="scope-tag st-global" data-tooltip="Available globally from ~/.claude/ — applies to all projects on this machine">Global</span>`
+  const harnessShortName = getHarnessShortName();
+  const harnessId = getHarnessDescriptor().id;
+  const globalConfigRoot = harnessId === "claude" ? "~/.claude/" : harnessId === "codex" ? "~/.codex/" : "the harness global config";
+  const shadowedTip = "This item is overridden by a project-scoped item with the same name";
+  const conflictTip = `Same name exists in both user and project scope — ${harnessShortName} does not guarantee which one applies`;
+  const ancestorTip = harnessId === "claude"
+    ? "From a parent directory — Claude Code loads CLAUDE.md files by walking up from the working directory"
+    : `From a parent directory — ${harnessShortName} may load parent-scope instruction files depending on the selected project`;
+  const globalTip = `Available globally from ${globalConfigRoot} — applies to all projects on this machine`;
+  const effectiveBadge = isShadowed     ? `<span class="scope-tag st-shadowed" data-tooltip="${esc(shadowedTip)}">Shadowed</span>`
+                       : isConflict     ? `<span class="scope-tag st-conflict" data-tooltip="${esc(conflictTip)}">⚠ Conflict</span>`
+                       : isFromAncestor ? `<span class="scope-tag st-ancestor" data-tooltip="${esc(ancestorTip)}">Ancestor</span>`
+                       : isFromGlobal   ? `<span class="scope-tag st-global" data-tooltip="${esc(globalTip)}">Global</span>`
                        : "";
   const isMcpDisabled = item.category === "mcp" && mcpDisabledNames.has(item.name);
   const mcpToggleBtn = item.category === "mcp" && hasCapability("mcpControls")
@@ -3643,8 +3663,9 @@ function renderSessionChat(res) {
   for (const msg of messages) {
     const isUser = msg.role === "user";
     const roleClass = isUser ? "chat-user" : "chat-assistant";
-    const roleLabel = isUser ? "You" : "Claude";
-    const avatar = isUser ? "U" : "C";
+    const assistantName = getHarnessShortName();
+    const roleLabel = isUser ? "You" : assistantName;
+    const avatar = isUser ? "U" : assistantName.slice(0, 1).toUpperCase();
 
     let body = esc(msg.text || "");
     // Basic markdown-ish: **bold**, `code`, ```blocks```

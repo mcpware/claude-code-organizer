@@ -321,7 +321,7 @@ body {
   text-align: center;
 }
 .update-banner:hover { background: oklch(0.30 0.07 80) !important; cursor: pointer; }
-.update-banner::after { content: "Click to copy update command — paste into Claude Code"; display: block; font-size: 0.55rem; opacity: 0; transition: opacity 150ms; margin-top: 2px; color: #d4c080; }
+.update-banner::after { content: "Click to copy update command"; display: block; font-size: 0.55rem; opacity: 0; transition: opacity 150ms; margin-top: 2px; color: #d4c080; }
 .update-banner:hover::after { opacity: 1; }
 .update-banner code { background: oklch(0.20 0.04 80); padding: 1px 5px; border-radius: 3px; font-size: 0.6rem; }
 .scope-notice {
