@@ -1474,6 +1474,28 @@ body {
   box-shadow: 0 0 12px oklch(0.58 0.15 175 / 0.3);
 }
 .sidebar-security-btn:active { transform: scale(0.98); }
+.sec-btn-icon,
+.sec-btn-label,
+.sec-btn-badge {
+  position: relative;
+  z-index: 1;
+}
+.sec-btn-label { white-space: nowrap; }
+.sec-btn-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+}
 
 /* Rescan button in security panel header — matches sidebar security btn style */
 .security-rescan-btn {

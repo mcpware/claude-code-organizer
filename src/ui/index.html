@@ -22,7 +22,11 @@
         <button class="theme-btn" id="themeToggle" type="button">◐</button>
       </div>
 
-      <button class="sidebar-security-btn" id="securityScanBtn" type="button">🛡️ Security Scan</button>
+      <button class="sidebar-security-btn" id="securityScanBtn" type="button">
+        <span class="sec-btn-icon" aria-hidden="true">🛡️</span>
+        <span class="sec-btn-label">Security Scan</span>
+        <span class="sec-btn-badge hidden" id="securityScanBadge" aria-hidden="true"></span>
+      </button>
       <input class="sidebar-search" id="searchInput" type="text" placeholder="Search...">
 
       <div class="sidebar-tree" id="sidebarTree"></div>

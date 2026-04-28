@@ -296,6 +296,7 @@ async function switchHarness(harnessId) {
   securityScanResults = null;
   securityBadges = {};
   securityBaselineStatus = {};
+  clearSecurityButtonAlert();
 
   closeDetail();
   closeContextBudget();
@@ -4085,6 +4086,38 @@ let securityBadges = {};
 /** Map of MCP server name → baseline status ("new" | "changed" | null). */
 let securityBaselineStatus = {};
 
+function setSecurityButtonAlert(count, tooltipText) {
+  const btn = document.getElementById("securityScanBtn");
+  if (!btn) return;
+  btn.classList.add("sec-btn-alert");
+  btn.setAttribute("aria-label", `Security Scan: ${tooltipText}`);
+
+  const badge = document.getElementById("securityScanBadge");
+  if (badge) {
+    badge.textContent = String(count);
+    badge.classList.remove("hidden");
+  }
+
+  btn.querySelector(".sec-btn-tooltip")?.remove();
+  const tip = document.createElement("span");
+  tip.className = "sec-btn-tooltip";
+  tip.textContent = tooltipText;
+  btn.appendChild(tip);
+}
+
+function clearSecurityButtonAlert() {
+  const btn = document.getElementById("securityScanBtn");
+  if (!btn) return;
+  btn.classList.remove("sec-btn-alert");
+  btn.removeAttribute("aria-label");
+  btn.querySelector(".sec-btn-tooltip")?.remove();
+  const badge = document.getElementById("securityScanBadge");
+  if (badge) {
+    badge.textContent = "";
+    badge.classList.add("hidden");
+  }
+}
+
 function setupSecurityScan() {
   const btn = document.getElementById("securityScanBtn");
   const panel = document.getElementById("securityPanel");
@@ -4271,17 +4304,11 @@ async function runSecurityScan() {
       for (const b of (scanData.baselines || [])) {
         if (b.hasChanges && !b.isFirstScan) securityBaselineStatus[b.serverName] = "changed";
       }
-      scanBtn.classList.add("sec-btn-alert");
-      scanBtn.querySelector(".sec-btn-tooltip")?.remove();
-      const tip = document.createElement("span");
-      tip.className = "sec-btn-tooltip";
-      tip.textContent = `${changedCount} MCP server${changedCount > 1 ? "s" : ""} changed — click to rescan`;
-      scanBtn.appendChild(tip);
+      setSecurityButtonAlert(changedCount, `${changedCount} MCP server${changedCount > 1 ? "s" : ""} changed — click to rescan`);
       renderAll(); // re-render to show CHANGED badges
     } else if (scanBtn) {
       // All clear — remove shimmer + tooltip + re-render to clear badges
-      scanBtn.classList.remove("sec-btn-alert");
-      scanBtn.querySelector(".sec-btn-tooltip")?.remove();
+      clearSecurityButtonAlert();
       renderAll();
     }
 
@@ -4524,16 +4551,8 @@ async function loadCachedSecurityResults() {
     // Check baselines for changes → pulse the sidebar button
     const hasChanges = (cached.data.baselines || []).some(b => b.hasChanges && !b.isFirstScan);
     if (hasChanges) {
-      const btn = document.getElementById("securityScanBtn");
-      if (btn) {
-        btn.classList.add("sec-btn-alert");
-        if (!btn.querySelector(".sec-btn-tooltip")) {
-          const tip = document.createElement("span");
-          tip.className = "sec-btn-tooltip";
-          tip.textContent = "MCP servers changed since last scan — click to rescan";
-          btn.appendChild(tip);
-        }
-      }
+      const changedCount = (cached.data.baselines || []).filter(b => b.hasChanges && !b.isFirstScan).length;
+      setSecurityButtonAlert(changedCount, `${changedCount} MCP server${changedCount > 1 ? "s" : ""} changed since last scan — click to rescan`);
     }
   } catch {}
 }
@@ -4552,17 +4571,10 @@ async function checkForNewMcpServers() {
 
     // If there are new servers, shimmer the sidebar button + add tooltip
     if (result.newServers?.length > 0) {
-      const btn = document.getElementById("securityScanBtn");
-      if (btn) {
-        btn.classList.add("sec-btn-alert");
-        // Add tooltip if not already present
-        if (!btn.querySelector(".sec-btn-tooltip")) {
-          const tip = document.createElement("span");
-          tip.className = "sec-btn-tooltip";
-          tip.textContent = `${result.newServers.length} new MCP server${result.newServers.length > 1 ? "s" : ""} detected — click to scan`;
-          btn.appendChild(tip);
-        }
-      }
+      setSecurityButtonAlert(
+        result.newServers.length,
+        `${result.newServers.length} new MCP server${result.newServers.length > 1 ? "s" : ""} detected — click to scan`
+      );
     }
   } catch {}
 }
