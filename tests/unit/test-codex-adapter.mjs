@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getAdapter } from '../../src/harness/registry.mjs';
@@ -65,6 +65,15 @@ Nested system skill layout.
       await rm(home, { recursive: true, force: true });
     },
   };
+}
+
+async function exists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function createCodexProjectHome() {
@@ -146,6 +155,35 @@ describe('Codex adapter', () => {
     } finally {
       await env.cleanup();
     }
+  });
+
+  it('deletes Codex file and directory items that are marked deletable', async () => {
+    const env = await createCodexHome();
+    try {
+      const result = await scanHarness(codexAdapter, { home: env.home, cwd: env.home });
+      const targets = [
+        result.items.find(item => item.category === 'memory' && item.name === 'Project Memory'),
+        result.items.find(item => item.category === 'skill' && item.name === 'demo-skill'),
+        result.items.find(item => item.category === 'rule' && item.name === 'default.rules'),
+      ];
+
+      for (const item of targets) {
+        assert.ok(item, `missing ${item?.category || 'target'} test item`);
+        const response = await codexAdapter.operations.deleteItem(item, result.scopes);
+        assert.strictEqual(response.ok, true);
+        assert.strictEqual(await exists(item.path), false);
+      }
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('returns structured unsupported responses for Codex moves', async () => {
+    const result = await codexAdapter.operations.moveItem({ category: 'memory', name: 'x' }, 'global', []);
+    assert.deepStrictEqual(result, {
+      ok: false,
+      error: 'Codex adapter does not support moving items yet',
+    });
   });
 
   it('models Codex project config from repo roots instead of Claude encoded scopes', async () => {

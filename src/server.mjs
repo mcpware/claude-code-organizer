@@ -80,6 +80,16 @@ function requestHarnessId(url) {
   return url.searchParams.get("harness") || getDefaultAdapterId();
 }
 
+function unavailableForHarness(adapter, feature) {
+  return {
+    ok: false,
+    unavailable: true,
+    harnessId: adapter.id,
+    feature,
+    error: `${feature} is unavailable for ${adapter.displayName}.`,
+  };
+}
+
 async function scanForCache(harnessId) {
   if (harnessId === getDefaultAdapterId()) return scan();
   const adapter = await getAdapter(harnessId);
@@ -156,13 +166,20 @@ function json(res, data, status = 200) {
   res.end(JSON.stringify(data));
 }
 
+function requestErrorStatus(err, fallback = 500) {
+  return Number.isInteger(err?.statusCode) ? err.statusCode : fallback;
+}
+
 async function readBody(req) {
   let body = "";
   for await (const chunk of req) body += chunk;
+  if (!body.trim()) return {};
   try {
     return JSON.parse(body);
   } catch {
-    throw new Error("Invalid JSON body");
+    const err = new Error("Invalid JSON body");
+    err.statusCode = 400;
+    throw err;
   }
 }
 
@@ -243,6 +260,7 @@ async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const path = url.pathname;
   const harnessId = requestHarnessId(url);
+  let activeAdapter = null;
   let cachedData = getCachedData(harnessId);
   async function freshScan() {
     cachedData = await refreshScanCache(harnessId);
@@ -273,7 +291,7 @@ async function handleRequest(req, res) {
 
   if (path.startsWith("/api/") && path !== "/api/version") {
     try {
-      await getAdapter(harnessId);
+      activeAdapter = await getAdapter(harnessId);
     } catch (err) {
       return json(res, { ok: false, error: err.message }, 400);
     }
@@ -343,6 +361,10 @@ async function handleRequest(req, res) {
 
   // GET /api/context-budget?scope=<id> — token budget breakdown for a scope
   if (path === "/api/context-budget" && req.method === "GET") {
+    if (!activeAdapter.capabilities.contextBudget) {
+      return json(res, unavailableForHarness(activeAdapter, "contextBudget"), 501);
+    }
+
     const scopeId = url.searchParams.get("scope");
     if (!scopeId) return json(res, { ok: false, error: "Missing scope parameter" }, 400);
 
@@ -370,7 +392,12 @@ async function handleRequest(req, res) {
     if (!item) return json(res, { ok: false, error: "Item not found or locked" }, 400);
 
     const operations = await getHarnessOperations(harnessId);
-    const result = await operations.moveItem(item, toScopeId, cachedData.scopes);
+    let result;
+    try {
+      result = await operations.moveItem(item, toScopeId, cachedData.scopes);
+    } catch (err) {
+      result = { ok: false, error: err.message };
+    }
 
     // Refresh cache after move
     if (result.ok) await freshScan();
@@ -393,7 +420,12 @@ async function handleRequest(req, res) {
     if (!item) return json(res, { ok: false, error: "Item not found or locked" }, 400);
 
     const operations = await getHarnessOperations(harnessId);
-    const result = await operations.deleteItem(item, cachedData.scopes);
+    let result;
+    try {
+      result = await operations.deleteItem(item, cachedData.scopes);
+    } catch (err) {
+      result = { ok: false, error: err.message };
+    }
 
     if (result.ok) await freshScan();
 
@@ -499,7 +531,7 @@ async function handleRequest(req, res) {
       cachedData = null;
       return json(res, { ok: true });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -679,7 +711,7 @@ async function handleRequest(req, res) {
         stats: result.stats,
       });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -817,7 +849,7 @@ async function handleRequest(req, res) {
         schedulerInstalled,
       });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -871,7 +903,7 @@ async function handleRequest(req, res) {
 
       return json(res, { ok: true, copied, errors: errors.length, gitResult, counts: scanData.counts, totalItems: scanData.items.length, scopeCount: scanData.scopes.length });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -884,7 +916,7 @@ async function handleRequest(req, res) {
       const result = await commitAndPush(backupDir);
       return json(res, { ok: true, ...result });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -911,7 +943,7 @@ async function handleRequest(req, res) {
 
       return json(res, { ok: true, interval: intervalHours });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -934,7 +966,7 @@ async function handleRequest(req, res) {
       }
       return json(res, { ok: true, url });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -942,6 +974,10 @@ async function handleRequest(req, res) {
 
   // GET /api/mcp-disabled?project=<absolutePath> — get disabled servers for a project
   if (path === "/api/mcp-disabled" && req.method === "GET") {
+    if (!activeAdapter.capabilities.mcpControls) {
+      return json(res, unavailableForHarness(activeAdapter, "mcpControls"), 501);
+    }
+
     const projectPath = url.searchParams.get("project");
     if (!projectPath) return json(res, { ok: false, error: "Missing project param" }, 400);
     const disabled = await getDisabledMcpServers(projectPath);
@@ -950,6 +986,10 @@ async function handleRequest(req, res) {
 
   // POST /api/mcp-disabled — add or remove from disabled list
   if (path === "/api/mcp-disabled" && req.method === "POST") {
+    if (!activeAdapter.capabilities.mcpControls) {
+      return json(res, unavailableForHarness(activeAdapter, "mcpControls"), 501);
+    }
+
     try {
       const body = await readBody(req);
       const { project, action, serverName } = body;
@@ -970,7 +1010,7 @@ async function handleRequest(req, res) {
       cachedData = null;
       return json(res, { ok: true, disabled: updated });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -978,6 +1018,10 @@ async function handleRequest(req, res) {
 
   // GET /api/mcp-policy — return allowlist/denylist + per-server policy status
   if (path === "/api/mcp-policy" && req.method === "GET") {
+    if (!activeAdapter.capabilities.mcpPolicy) {
+      return json(res, unavailableForHarness(activeAdapter, "mcpPolicy"), 501);
+    }
+
     try {
       if (!cachedData) await freshScan();
       const policy = await scanMcpPolicy();
@@ -989,12 +1033,16 @@ async function handleRequest(req, res) {
       }));
       return json(res, { ok: true, ...policy, servers: serverStatuses });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
   // POST /api/mcp-policy — add/remove allowlist or denylist entries in user settings
   if (path === "/api/mcp-policy" && req.method === "POST") {
+    if (!activeAdapter.capabilities.mcpPolicy) {
+      return json(res, unavailableForHarness(activeAdapter, "mcpPolicy"), 501);
+    }
+
     try {
       const body = await readBody(req);
       const { action, entry } = body;
@@ -1026,7 +1074,7 @@ async function handleRequest(req, res) {
       cachedData = null;
       return json(res, { ok: true });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -1058,7 +1106,7 @@ async function handleRequest(req, res) {
 
       return json(res, scanResults);
     } catch (err) {
-      return json(res, { ok: false, error: `Security scan failed: ${err.message}` }, 500);
+      return json(res, { ok: false, error: `Security scan failed: ${err.message}` }, requestErrorStatus(err));
     }
   }
 
@@ -1084,7 +1132,7 @@ async function handleRequest(req, res) {
       const llmResults = await llmJudge(toolsToJudge);
       return json(res, { ok: true, results: llmResults });
     } catch (err) {
-      return json(res, { ok: false, error: `LLM rescan failed: ${err.message}` }, 500);
+      return json(res, { ok: false, error: `LLM rescan failed: ${err.message}` }, requestErrorStatus(err));
     }
   }
 
@@ -1102,7 +1150,7 @@ async function handleRequest(req, res) {
       // Changed detection requires introspection (can't do without scan), so only flag new
       return json(res, { ok: true, newServers });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -1128,7 +1176,7 @@ async function handleRequest(req, res) {
       await wf(join(securityDir, "last-scan.json"), JSON.stringify(body));
       return json(res, { ok: true });
     } catch (err) {
-      return json(res, { ok: false, error: err.message }, 500);
+      return json(res, { ok: false, error: err.message }, requestErrorStatus(err));
     }
   }
 
@@ -1225,8 +1273,9 @@ export function startServer(port = 3847, maxRetries = 10) {
     try {
       await handleRequest(req, res);
     } catch (err) {
-      console.error("Error:", err.message);
-      res.writeHead(500, { "Content-Type": "application/json" });
+      const status = err.statusCode || 500;
+      if (status >= 500) console.error("Error:", err.message);
+      res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: false, error: err.message }));
     }
   });

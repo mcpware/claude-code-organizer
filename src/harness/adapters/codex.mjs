@@ -5,7 +5,7 @@
  */
 
 import TOML from "@iarna/toml";
-import { readdir } from "node:fs/promises";
+import { readdir, rm, unlink } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import {
   exists,
@@ -1242,10 +1242,28 @@ const unsupportedOperations = {
     return [];
   },
   async moveItem() {
-    throw new Error("Codex adapter does not support moving items yet");
+    return { ok: false, error: "Codex adapter does not support moving items yet" };
   },
-  async deleteItem() {
-    throw new Error("Codex adapter does not support deleting items yet");
+  async deleteItem(item) {
+    if (item.locked) {
+      return { ok: false, error: `${item.name} is locked and cannot be deleted` };
+    }
+
+    try {
+      if (item.category === "skill") {
+        await rm(item.path, { recursive: true, force: true });
+        return { ok: true, deleted: item.path, message: `Deleted Codex skill "${item.name}"` };
+      }
+
+      if (["memory", "rule"].includes(item.category)) {
+        await unlink(item.path);
+        return { ok: true, deleted: item.path, message: `Deleted Codex ${item.category} "${item.name}"` };
+      }
+
+      return { ok: false, error: `Codex ${item.category} items cannot be deleted` };
+    } catch (err) {
+      return { ok: false, error: `Delete failed: ${err.message}` };
+    }
   },
 };
 
