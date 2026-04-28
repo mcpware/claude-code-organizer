@@ -67,6 +67,51 @@ Nested system skill layout.
   };
 }
 
+async function createCodexProjectHome() {
+  const home = await mkdtemp(join(tmpdir(), 'cco-codex-project-'));
+  const projectDir = join(home, 'work', 'demo-repo');
+  const nestedDir = join(projectDir, 'packages', 'api');
+  const codexDir = join(home, '.codex');
+
+  await mkdir(join(projectDir, '.git'), { recursive: true });
+  await mkdir(join(projectDir, '.codex', 'skills', 'repo-skill'), { recursive: true });
+  await mkdir(join(projectDir, '.agents', 'skills', 'agents-skill'), { recursive: true });
+  await mkdir(nestedDir, { recursive: true });
+  await mkdir(codexDir, { recursive: true });
+
+  await writeFile(join(codexDir, 'config.toml'), `
+[projects."${projectDir}"]
+trust_level = "trusted"
+`);
+
+  await writeFile(join(projectDir, 'AGENTS.md'), '# Repo Instructions\nUse npm test.\n');
+  await writeFile(join(projectDir, '.codex', 'config.toml'), `
+[profiles.repo]
+sandbox_mode = "workspace-write"
+
+[mcp_servers.repo_mcp]
+command = "node"
+args = ["server.mjs"]
+`);
+  await writeFile(join(projectDir, '.codex', 'skills', 'repo-skill', 'SKILL.md'), `# Repo Skill
+
+Use inside this repo.
+`);
+  await writeFile(join(projectDir, '.agents', 'skills', 'agents-skill', 'SKILL.md'), `# Agents Skill
+
+Shared repo skill root.
+`);
+
+  return {
+    home,
+    projectDir,
+    nestedDir,
+    async cleanup() {
+      await rm(home, { recursive: true, force: true });
+    },
+  };
+}
+
 describe('Codex adapter', () => {
   it('is discoverable through the harness registry', async () => {
     const adapter = await getAdapter('codex');
@@ -77,7 +122,7 @@ describe('Codex adapter', () => {
   it('loads and scans ~/.codex inventory', async () => {
     const env = await createCodexHome();
     try {
-      const result = await scanHarness(codexAdapter, { home: env.home });
+      const result = await scanHarness(codexAdapter, { home: env.home, cwd: env.home });
 
       assert.strictEqual(result.harness.id, 'codex');
       assert.deepStrictEqual(result.scopes.map(scope => scope.id), ['global']);
@@ -98,6 +143,60 @@ describe('Codex adapter', () => {
       assert.ok(result.items.some(item => item.category === 'profile' && item.name === 'review'));
       assert.ok(result.items.some(item => item.category === 'rule' && item.name === 'default.rules'));
       assert.ok(result.items.some(item => item.category === 'plugin' && item.name === 'github'));
+    } finally {
+      await env.cleanup();
+    }
+  });
+
+  it('models Codex project config from repo roots instead of Claude encoded scopes', async () => {
+    const env = await createCodexProjectHome();
+    try {
+      const result = await scanHarness(codexAdapter, { home: env.home, cwd: env.nestedDir });
+      const projectScope = result.scopes.find(scope => scope.repoDir === env.projectDir);
+
+      assert.ok(projectScope, 'project scope should come from the repo path');
+      assert.strictEqual(projectScope.trustLevel, 'trusted');
+      assert.deepStrictEqual(projectScope.codexScopeSources, ['cwd', 'trust']);
+
+      assert.ok(result.items.some(item =>
+        item.scopeId === projectScope.id &&
+        item.category === 'config' &&
+        item.name === 'config.toml project entry' &&
+        item.subType === 'project-trust'
+      ));
+      assert.ok(result.items.some(item =>
+        item.scopeId === projectScope.id &&
+        item.category === 'config' &&
+        item.name === 'AGENTS.md'
+      ));
+      assert.ok(result.items.some(item =>
+        item.scopeId === projectScope.id &&
+        item.category === 'config' &&
+        item.name === '.codex/config.toml'
+      ));
+      assert.ok(result.items.some(item =>
+        item.scopeId === projectScope.id &&
+        item.category === 'skill' &&
+        item.name === 'repo-skill' &&
+        item.sourceFile === '.codex/skills'
+      ));
+      assert.ok(result.items.some(item =>
+        item.scopeId === projectScope.id &&
+        item.category === 'skill' &&
+        item.name === 'agents-skill' &&
+        item.sourceFile === '.agents/skills'
+      ));
+      assert.ok(result.items.some(item =>
+        item.scopeId === projectScope.id &&
+        item.category === 'mcp' &&
+        item.name === 'repo_mcp' &&
+        item.mcpConfig.command === 'node'
+      ));
+      assert.ok(result.items.some(item =>
+        item.scopeId === projectScope.id &&
+        item.category === 'profile' &&
+        item.name === 'repo'
+      ));
     } finally {
       await env.cleanup();
     }

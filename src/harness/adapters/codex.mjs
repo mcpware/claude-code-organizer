@@ -6,7 +6,7 @@
 
 import TOML from "@iarna/toml";
 import { readdir } from "node:fs/promises";
-import { basename, extname, join, relative } from "node:path";
+import { basename, extname, join, relative, resolve } from "node:path";
 import {
   exists,
   formatSize,
@@ -64,7 +64,7 @@ const categories = [
     icon: "⚙️",
     order: 10,
     group: "config",
-    source: "~/.codex/config.toml, AGENTS.md, and project .codex config",
+    source: "~/.codex/config.toml, $CODEX_HOME/AGENTS*.md, repo AGENTS*.md, and repo .codex/config.toml",
     preview: "config file",
   }),
   defineCategory({
@@ -85,7 +85,7 @@ const categories = [
     icon: "⚡",
     order: 30,
     group: "skill",
-    source: "~/.codex/skills/*/SKILL.md",
+    source: "~/.codex/skills, ~/.agents/skills, <repo>/.codex/skills, and <repo>/.agents/skills",
     preview: "SKILL.md",
     deletable: true,
   }),
@@ -96,7 +96,7 @@ const categories = [
     icon: "🔌",
     order: 40,
     group: "mcp",
-    source: "~/.codex/config.toml mcp_servers",
+    source: "~/.codex/config.toml and trusted <repo>/.codex/config.toml mcp_servers",
     preview: "mcp_servers entry",
   }),
   defineCategory({
@@ -106,7 +106,7 @@ const categories = [
     icon: "👤",
     order: 50,
     group: "profile",
-    source: "~/.codex/config.toml profiles",
+    source: "~/.codex/config.toml and trusted <repo>/.codex/config.toml profiles",
     preview: "profiles entry",
   }),
   defineCategory({
@@ -301,6 +301,126 @@ function projectScopeName(projectPath) {
   return basename(projectPath) || projectPath;
 }
 
+function normalizeProjectPath(projectPath) {
+  return projectPath ? resolve(projectPath) : "";
+}
+
+function defaultProjectRootMarkers(config) {
+  const markers = config?.project_root_markers;
+  return Array.isArray(markers) && markers.every(marker => typeof marker === "string")
+    ? markers
+    : [".git"];
+}
+
+async function findProjectRoot(startDir, markers) {
+  let current = normalizeProjectPath(startDir);
+  if (!current) return "";
+  if (!markers.length) return current;
+
+  while (current && current !== "/") {
+    for (const marker of markers) {
+      if (await exists(join(current, marker))) return current;
+    }
+    const next = resolve(current, "..");
+    if (next === current) break;
+    current = next;
+  }
+
+  return normalizeProjectPath(startDir);
+}
+
+function dirsBetweenProjectRootAndCwd(projectRoot, cwd) {
+  const root = normalizeProjectPath(projectRoot);
+  let current = normalizeProjectPath(cwd);
+  const dirs = [];
+
+  while (current) {
+    dirs.push(current);
+    if (current === root || current === "/") break;
+    const next = resolve(current, "..");
+    if (next === current) break;
+    current = next;
+  }
+
+  return dirs.reverse();
+}
+
+async function hasCodexProjectArtifacts(projectPath, fallbackNames = []) {
+  if (!projectPath) return false;
+  const candidates = [
+    "AGENTS.override.md",
+    "AGENTS.md",
+    ...fallbackNames,
+    ".codex",
+    ".agents/skills",
+  ];
+
+  for (const relPath of candidates) {
+    if (relPath && await exists(join(projectPath, relPath))) return true;
+  }
+
+  return false;
+}
+
+async function addProjectCandidate(candidates, projectPath, source, options = {}) {
+  const normalized = normalizeProjectPath(projectPath);
+  if (!normalized) return;
+
+  const existing = candidates.get(normalized) || {
+    path: normalized,
+    sources: new Set(),
+    trustLevel: "",
+    codexProjectConfig: null,
+  };
+
+  existing.sources.add(source);
+  if (options.trustLevel) existing.trustLevel = options.trustLevel;
+  if (options.codexProjectConfig) existing.codexProjectConfig = options.codexProjectConfig;
+  candidates.set(normalized, existing);
+}
+
+async function discoverProjectCandidates(ctx, parsed) {
+  const candidates = new Map();
+  const fallbackNames = Array.isArray(parsed.config?.project_doc_fallback_filenames)
+    ? parsed.config.project_doc_fallback_filenames.filter(name => typeof name === "string")
+    : [];
+  const markers = defaultProjectRootMarkers(parsed.config);
+
+  for (const [projectPath, projectConfig] of objectEntries(parsed.config?.projects)) {
+    if (!projectPath || !projectConfig || typeof projectConfig !== "object") continue;
+    await addProjectCandidate(candidates, projectPath, "trust", {
+      trustLevel: projectConfig.trust_level || "",
+      codexProjectConfig: projectConfig,
+    });
+  }
+
+  const cwdRoot = await findProjectRoot(ctx.cwd, markers);
+  for (const dir of dirsBetweenProjectRootAndCwd(cwdRoot, ctx.cwd)) {
+    if (normalizeProjectPath(dir) === normalizeProjectPath(ctx.home)) continue;
+    if (await hasCodexProjectArtifacts(dir, fallbackNames)) {
+      await addProjectCandidate(candidates, dir, "cwd");
+    }
+  }
+
+  return [...candidates.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function assignProjectParents(scopes) {
+  const projectScopes = scopes
+    .filter(scope => scope.repoDir && scope.codexScopeSources?.includes("cwd"))
+    .sort((a, b) => a.repoDir.length - b.repoDir.length);
+
+  for (const scope of projectScopes) {
+    let parent = null;
+    for (const candidate of projectScopes) {
+      if (candidate.id === scope.id) continue;
+      if (scope.repoDir === candidate.repoDir) continue;
+      if (scope.repoDir.startsWith(`${candidate.repoDir}/`)) parent = candidate;
+    }
+    scope.parentId = parent?.id || "global";
+  }
+}
+
 async function discoverScopes(ctx) {
   const scopes = [{
     id: "global",
@@ -313,29 +433,33 @@ async function discoverScopes(ctx) {
   }];
 
   const parsed = await readCodexConfig(ctx);
-  const projects = objectEntries(parsed.config?.projects)
-    .filter(([projectPath, projectConfig]) => projectPath && projectConfig && typeof projectConfig === "object")
-    .sort(([a], [b]) => a.localeCompare(b));
+  const projects = await discoverProjectCandidates(ctx, parsed);
 
-  for (const [projectPath, projectConfig] of projects) {
+  for (const project of projects) {
     scopes.push({
-      id: projectScopeId(projectPath),
-      name: projectScopeName(projectPath),
+      id: projectScopeId(project.path),
+      name: projectScopeName(project.path),
       type: "project",
-      tag: projectConfig.trust_level || "project",
+      tag: project.trustLevel || (project.sources.has("trust") ? "project trust" : "repo context"),
       parentId: "global",
-      repoDir: projectPath,
-      configDir: join(projectPath, ".codex"),
-      trustLevel: projectConfig.trust_level || "",
-      codexProjectConfig: projectConfig,
+      repoDir: project.path,
+      configDir: join(project.path, ".codex"),
+      trustLevel: project.trustLevel,
+      codexProjectConfig: project.codexProjectConfig,
+      codexScopeSources: [...project.sources].sort(),
     });
   }
 
+  assignProjectParents(scopes);
   return scopes;
 }
 
 async function readCodexConfig(ctx) {
   const path = join(codexDir(ctx), "config.toml");
+  return readTomlFile(path);
+}
+
+async function readTomlFile(path) {
   const content = await safeReadFile(path);
   const stat = await safeStat(path);
   if (!content) return { path, content: null, stat, config: null, error: null };
@@ -466,6 +590,25 @@ function configDescription(config) {
   return parts.join(", ") || "Codex CLI configuration";
 }
 
+async function configFileItem({ scopeId, name, path, desc, subType, locked = false, value, valueType }) {
+  const stat = await safeStat(path);
+  if (!stat) return null;
+  const content = await safeReadFile(path);
+  return {
+    category: "config",
+    scopeId,
+    name,
+    fileName: basename(path),
+    description: markdownDescription(content) || desc,
+    subType,
+    ...statFields(stat),
+    path,
+    locked,
+    value,
+    valueType: valueType || extname(path).replace(/^\./, "") || "file",
+  };
+}
+
 function projectConfigDescription(scope) {
   const trust = scope.trustLevel ? `trust: ${scope.trustLevel}` : "project scope";
   return `${trust} (${scope.repoDir})`;
@@ -475,36 +618,31 @@ async function scanProjectLocalConfigs(scope, ctx) {
   const items = [];
   if (!scope.repoDir) return items;
 
+  const parsed = await readCodexConfig(ctx);
+  const fallbackNames = Array.isArray(parsed.config?.project_doc_fallback_filenames)
+    ? parsed.config.project_doc_fallback_filenames.filter(name => typeof name === "string")
+    : [];
   const candidates = [
-    { name: "AGENTS.md", path: join(scope.repoDir, "AGENTS.md"), desc: "Project instructions" },
+    { name: "AGENTS.override.md", path: join(scope.repoDir, "AGENTS.override.md"), desc: "Project-local override instructions", subType: "instructions-override" },
+    { name: "AGENTS.md", path: join(scope.repoDir, "AGENTS.md"), desc: "Project instructions", subType: "instructions" },
+    ...fallbackNames.map(fileName => ({
+      name: fileName,
+      path: join(scope.repoDir, fileName),
+      desc: "Project instruction fallback",
+      subType: "instructions-fallback",
+    })),
+    { name: ".codex/config.toml", path: join(scope.repoDir, ".codex", "config.toml"), desc: "Project Codex config layer", subType: "project-config" },
   ];
 
-  const localCodexDir = join(scope.repoDir, ".codex");
-  if (localCodexDir !== codexDir(ctx)) {
-    for (const fileName of ["AGENTS.md", "config.toml", "config.local.toml", "settings.json", "settings.local.json"]) {
-      candidates.push({
-        name: `.codex/${fileName}`,
-        path: join(localCodexDir, fileName),
-        desc: "Project Codex config",
-      });
-    }
-  }
-
   for (const candidate of candidates) {
-    const stat = await safeStat(candidate.path);
-    if (!stat) continue;
-    const content = await safeReadFile(candidate.path);
-    items.push({
-      category: "config",
+    const item = await configFileItem({
       scopeId: scope.id,
       name: candidate.name,
-      fileName: basename(candidate.path),
-      description: markdownDescription(content) || candidate.desc,
-      subType: candidate.name.endsWith(".md") ? "instructions" : "project-config",
-      ...statFields(stat),
       path: candidate.path,
-      valueType: extname(candidate.path).replace(/^\./, "") || "file",
+      desc: candidate.desc,
+      subType: candidate.subType,
     });
+    if (item) items.push(item);
   }
 
   return items;
@@ -537,20 +675,38 @@ async function scanConfig(scope, ctx) {
     return items;
   }
 
-  if (!parsed.content) return [];
+  const items = [];
+  if (parsed.content) {
+    items.push({
+      category: "config",
+      scopeId: scope.id,
+      name: "config.toml",
+      fileName: "config.toml",
+      description: parsed.error ? `TOML parse error: ${parsed.error.message}` : configDescription(parsed.config),
+      subType: "config",
+      ...statFields(parsed.stat),
+      path: parsed.path,
+      locked: true,
+      valueType: parsed.error ? "invalid-toml" : "toml",
+    });
+  }
 
-  return [{
-    category: "config",
-    scopeId: scope.id,
-    name: "config.toml",
-    fileName: "config.toml",
-    description: parsed.error ? `TOML parse error: ${parsed.error.message}` : configDescription(parsed.config),
-    subType: "config",
-    ...statFields(parsed.stat),
-    path: parsed.path,
-    locked: true,
-    valueType: parsed.error ? "invalid-toml" : "toml",
-  }];
+  for (const candidate of [
+    { name: "AGENTS.override.md", path: join(codexDir(ctx), "AGENTS.override.md"), desc: "Global Codex override instructions", subType: "instructions-override" },
+    { name: "AGENTS.md", path: join(codexDir(ctx), "AGENTS.md"), desc: "Global Codex instructions", subType: "instructions" },
+  ]) {
+    const item = await configFileItem({
+      scopeId: scope.id,
+      name: candidate.name,
+      path: candidate.path,
+      desc: candidate.desc,
+      subType: candidate.subType,
+      locked: true,
+    });
+    if (item) items.push(item);
+  }
+
+  return items;
 }
 
 function markdownDescription(content) {
@@ -658,10 +814,7 @@ async function directorySummary(dir) {
   };
 }
 
-async function scanSkills(scope, ctx) {
-  if (scope.id !== "global") return [];
-
-  const root = join(codexDir(ctx), "skills");
+async function scanSkillRoot(scope, root, rootLabel, defaultSubType) {
   const items = [];
   const skillDirs = await findSkillDirs(root);
 
@@ -676,13 +829,32 @@ async function scanSkills(scope, ctx) {
       name: rel,
       fileName: rel,
       description: markdownDescription(content),
-      subType: rel.startsWith(".system/") ? "system-skill" : "skill",
+      subType: rel.startsWith(".system/") ? "system-skill" : defaultSubType,
       ...summary,
       path: skillDir,
       openPath: skillMd,
+      sourceFile: rootLabel,
     });
   }
 
+  return items;
+}
+
+async function scanSkills(scope, ctx) {
+  const roots = scope.id === "global"
+    ? [
+      { root: join(codexDir(ctx), "skills"), label: "$CODEX_HOME/skills", subType: "skill" },
+      { root: join(ctx.home, ".agents", "skills"), label: "~/.agents/skills", subType: "skill" },
+    ]
+    : [
+      { root: join(scope.repoDir, ".codex", "skills"), label: ".codex/skills", subType: "repo-skill" },
+      { root: join(scope.repoDir, ".agents", "skills"), label: ".agents/skills", subType: "repo-skill" },
+    ];
+
+  const items = [];
+  for (const entry of roots) {
+    items.push(...await scanSkillRoot(scope, entry.root, entry.label, entry.subType));
+  }
   return items;
 }
 
@@ -692,10 +864,19 @@ function mcpDescription(config) {
   return [cmd, ...args].filter(Boolean).join(" ").slice(0, 120) || "(MCP server)";
 }
 
-async function scanMcpServers(scope, ctx) {
-  if (scope.id !== "global") return [];
+function projectConfigEnabled(scope) {
+  return scope.id === "global" || scope.trustLevel === "trusted";
+}
 
-  const parsed = await readCodexConfig(ctx);
+async function readScopeConfig(scope, ctx) {
+  if (scope.id === "global") return readCodexConfig(ctx);
+  return readTomlFile(join(scope.repoDir, ".codex", "config.toml"));
+}
+
+async function scanMcpServers(scope, ctx) {
+  if (!projectConfigEnabled(scope)) return [];
+
+  const parsed = await readScopeConfig(scope, ctx);
   const servers = parsed.config?.mcp_servers || parsed.config?.mcpServers || {};
   const items = [];
 
@@ -714,6 +895,7 @@ async function scanMcpServers(scope, ctx) {
       ...timestampFields(parsed.stat),
       path: parsed.path,
       mcpConfig: serverConfig,
+      sourceFile: scope.id === "global" ? "config.toml" : ".codex/config.toml",
     });
   }
 
@@ -730,9 +912,9 @@ function profileDescription(profile) {
 }
 
 async function scanProfiles(scope, ctx) {
-  if (scope.id !== "global") return [];
+  if (!projectConfigEnabled(scope)) return [];
 
-  const parsed = await readCodexConfig(ctx);
+  const parsed = await readScopeConfig(scope, ctx);
   const profiles = parsed.config?.profiles || {};
   const items = [];
 
@@ -752,6 +934,7 @@ async function scanProfiles(scope, ctx) {
       path: parsed.path,
       value: profileConfig,
       valueType: "toml-table",
+      sourceFile: scope.id === "global" ? "config.toml" : ".codex/config.toml",
     });
   }
 
