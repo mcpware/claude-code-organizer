@@ -273,7 +273,7 @@ async function createTestEnv() {
   // ── Start server ──
   let actualPort = port;
   const server = await new Promise((resolve, reject) => {
-    const proc = spawn(NODE_BIN, [join(PROJECT_ROOT, 'bin', 'cli.mjs'), '--port', String(port)], {
+    const proc = spawn(NODE_BIN, [join(PROJECT_ROOT, 'bin', 'cli.mjs'), '--port', String(port), '--no-open'], {
       env: { ...process.env, HOME: tmpDir },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -3068,7 +3068,7 @@ test.describe('Path Resolution', () => {
     // Start server using cli.mjs (same as createTestEnv)
     let actualPort = port;
     const srv = await new Promise((resolve, reject) => {
-      const proc = spawn(NODE_BIN, [join(PROJECT_ROOT, 'bin', 'cli.mjs'), '--port', String(port)], {
+      const proc = spawn(NODE_BIN, [join(PROJECT_ROOT, 'bin', 'cli.mjs'), '--port', String(port), '--no-open'], {
         env: { ...process.env, HOME: tmpDir },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
@@ -3136,7 +3136,7 @@ test.describe('Path Resolution', () => {
 
     let actualPort = port;
     const srv = await new Promise((resolve, reject) => {
-      const proc = spawn(NODE_BIN, [join(PROJECT_ROOT, 'bin', 'cli.mjs'), '--port', String(port)], {
+      const proc = spawn(NODE_BIN, [join(PROJECT_ROOT, 'bin', 'cli.mjs'), '--port', String(port), '--no-open'], {
         env: { ...process.env, HOME: tmpDir },
         stdio: ['ignore', 'pipe', 'pipe'],
       });

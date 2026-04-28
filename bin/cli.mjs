@@ -137,10 +137,12 @@ if (isDistillMode) {
     }
   });
 
-  try {
-    const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
-    execSync(`${openCmd} http://localhost:${port}`, { stdio: 'ignore' });
-  } catch {
-    // Browser didn't open, user can navigate manually
+  if (!args.includes('--no-open') && process.env.CCO_NO_OPEN !== '1') {
+    try {
+      const openCmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
+      execSync(`${openCmd} http://localhost:${port}`, { stdio: 'ignore' });
+    } catch {
+      // Browser didn't open, user can navigate manually
+    }
   }
 }
