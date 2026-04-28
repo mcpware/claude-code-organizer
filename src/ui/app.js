@@ -312,11 +312,28 @@ async function switchHarness(harnessId) {
   renderAll();
 }
 
+const SCOPE_NOTICE_DISMISSED_KEY = "cco-scope-notice-v1-dismissed";
+
+function isScopeNoticeDismissed() {
+  return localStorage.getItem(SCOPE_NOTICE_DISMISSED_KEY) === "1";
+}
+
+function dismissScopeNotice() {
+  localStorage.setItem(SCOPE_NOTICE_DISMISSED_KEY, "1");
+  document.getElementById("scopeNotice")?.remove();
+}
+
 function setupScopeNotice() {
-  const NOTICE_KEY = "cco-scope-notice-v1-dismissed";
-  if (localStorage.getItem(NOTICE_KEY)) return;
+  if (isScopeNoticeDismissed()) {
+    document.getElementById("scopeNotice")?.remove();
+    return;
+  }
   const tree = document.getElementById("sidebarTree");
   if (!tree) return;
+  if (document.getElementById("scopeNotice")) {
+    updateScopeNotice();
+    return;
+  }
   const notice = document.createElement("div");
   notice.className = "scope-notice";
   notice.id = "scopeNotice";
@@ -327,14 +344,15 @@ function setupScopeNotice() {
 function updateScopeNotice() {
   const notice = document.getElementById("scopeNotice");
   if (!notice) return;
+  if (isScopeNoticeDismissed()) {
+    notice.remove();
+    return;
+  }
   const effectiveCopy = hasCapability("effective")
     ? `Use <strong>✦ Show Effective</strong> to see what actually applies in each project. Hover any category pill for its specific rule.`
     : `Categories are shown from the selected scope. Some categories are inventory-only because this harness does not expose project inheritance rules for them.`;
   notice.innerHTML = `<span class="scope-notice-dismiss" id="scopeNoticeDismiss">✕</span><strong>How ${esc(getHarnessShortName())} scopes work:</strong> Different categories can have different scope rules. ${effectiveCopy}`;
-  document.getElementById("scopeNoticeDismiss")?.addEventListener("click", () => {
-    localStorage.setItem("cco-scope-notice-v1-dismissed", "1");
-    notice.remove();
-  });
+  document.getElementById("scopeNoticeDismiss")?.addEventListener("click", dismissScopeNotice);
 }
 
 function setupUi() {
